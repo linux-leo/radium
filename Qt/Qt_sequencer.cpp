@@ -1185,22 +1185,15 @@ public:
 
       if (is_multiselected)
         color = get_block_qcolor(SEQUENCER_BLOCK_MULTISELECT_BACKGROUND_COLOR_NUM, Seqblock_Type::GFX_GFX);
-
-      else if (!g_draw_colored_seqblock_tracks)
-        color = get_block_qcolor(SEQUENCER_BLOCK_BACKGROUND_COLOR_NUM, Seqblock_Type::REGULAR);
-      
       else if (track->patch!=NULL)
         color = get_displayed_instrument_color_in_editor(track->patch);
-
       else
-        goto no_track_background;
+        color = get_block_qcolor(SEQUENCER_BLOCK_BACKGROUND_COLOR_NUM, Seqblock_Type::REGULAR);
       
       QRectF rect(x1,y1,x2-x1,y2-y1);
 
       myFillRect(p, rect, color);
     }
-    
-  no_track_background:
     
 #endif
 
@@ -1481,13 +1474,9 @@ public:
     const int header_height = get_block_header_height();
 
     QColor waveform_color = get_block_qcolor(SEQUENCER_WAVEFORM_COLOR_NUM, type);
-    QColor background_color = get_sample_color(seqtrack, seqblock).lighter(200);
+    QColor background_color = get_sample_color(seqtrack, seqblock);
     if (type==Seqblock_Type::GFX_GFX)
       background_color = half_alpha(mix_colors(background_color, get_qcolor(SEQUENCER_BLOCK_MULTISELECT_BACKGROUND_COLOR_NUM), 0.5), type);
-    else
-      background_color = mix_colors(background_color, get_seqtrack_background_color(seqtrack), 0.25).lighter(150);
-
-    background_color.setAlpha(180);
     
     myFillRect(p, rect.adjusted(0,header_height,0,0), background_color);
 
@@ -1685,7 +1674,6 @@ public:
 
     // background
     QColor header_color = get_seqblock_color(seqtrack, seqblock);//.lighter(150);
-    header_color.setAlpha(128);
     myFillRect(p, rect, header_color); //half_alpha(header_color, type));
 
     // name
@@ -2025,7 +2013,7 @@ public:
   }
       
   void draw_fades(QPainter &p, const QRectF &rect, const struct SeqTrack *seqtrack, const struct SeqBlock *seqblock) const {
-    QColor color = get_seqtrack_background_color(seqtrack); //get_qcolor(SEQTRACKS_BACKGROUND_COLOR_NUM); //mix_colors(QColor(50,50,50,200), get_qcolor(SEQUENCER_BACKGROUND_COLOR_NUM), 0.52f);
+    QColor color = get_qcolor(SEQTRACKS_BACKGROUND_COLOR_NUM); //mix_colors(QColor(50,50,50,200), get_qcolor(SEQUENCER_BACKGROUND_COLOR_NUM), 0.52f);
     color.setAlpha(180);
     //QColor color(50,50,50,200);
 

@@ -96,18 +96,14 @@ PREFIX=`dirname $PWD/$0`
 
 build_faust() {
 
+
 	rm -fr faust
-	tar xvzf faust-2.81.2.tar.gz
-	mv faust-2.81.2 faust
+	tar xvzf faust-2.85.9.tar.gz
+	mv faust-2.85.9 faust
 	cd faust
 	rm -fr libraries
 	tar xvzf ../faustlibraries_2024_01_05.tar.gz
 	mv faustlibraries libraries
-	
-	#patch -p0 < ../faust_polydsp_fadeout.patch
-	#patch -p0 < ../faust_soundfiles_clickfix.patch
-	patch -p0 < ../faust_soundfile_padding.patch
-	patch -p0 < ../faust_fopenat_nochdir.patch
 	
 	### this line is needed to build on artix
 	#export LIBNCURSES_PATH=$(shell find /usr -name libncursesw_g.a)
@@ -119,7 +115,7 @@ build_faust() {
 	else
 		cp ../faust_radium_llvm.cmake build/backends/most.cmake
 		export ORGTEMPPATH=$PATH
-		export PATH=$($LLVM_CONFIG_BIN --bindir):$PATH
+		export PATH=$(dirname $LLVM_CONFIG_BIN):$PATH
 		#echo "PATH: $PATH"
 	fi
 	
@@ -131,7 +127,7 @@ build_faust() {
 	echo "\n\nNote: Faust might fail if built with gcc. To work around that, simply build faust with clang instead, temporarily setting RADIUM_USE_CLANG=1 only when building faust.\n\n"
 	
 	# release build
-	BUILDOPT="--config Release -j${JOBS}" VERBOSE=1 CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" CMAKEOPT="-DCMAKE_BUILD_TYPE=Release -DSELF_CONTAINED_LIBRARY=on -DCMAKE_CXX_COMPILER=`which $DASCXX` -DCMAKE_C_COMPILER=`which $DASCC` $DARWIN_CMAKEOPT" make most
+	BUILDOPT="--config Release -j${JOBS}" VERBOSE=1 CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" CMAKEOPT="-DCMAKE_BUILD_TYPE=Release -DSELF_CONTAINED_LIBRARY=on -DCMAKE_CXX_COMPILER=`which $DASCXX` -DCMAKE_C_COMPILER=`which $DASCC` -DCMAKE_EXE_LINKER_FLAGS=-ledit" make most
 	
 	if ! is_0 $FAUST_USES_LLVM ; then
 		export PATH=$ORGTEMPPATH
@@ -213,16 +209,34 @@ build_gc() {
 
 build_fluidsynth() {
 
-    rm -fr fluidsynth-1.1.6
-    tar xvzf fluidsynth-1.1.6.tar.gz
-    cd fluidsynth-1.1.6
-    make clean
-    # Note: Old autoconf preprocessor sanity checks fail when CFLAGS/CPPFLAGS contain
-    # multiple -arch flags ("cannot use 'cpp-output' output with multiple -arch options"),
-    # so configure is run without arch flags, and arch flags are passed to make instead.
-    CFLAGS="-fPIC -fno-strict-aliasing -O3 -DDEFAULT_SOUNDFONT=\\\"\\\"" CPPFLAGS="-fPIC -fno-strict-aliasing -O3" CXXFLAGS="-fPIC -fno-strict-aliasing -O3" LDFLAGS="" CC=$DASCC CXX=$DASCXX ./configure --enable-static --disable-aufile-support --disable-pulse-support --disable-alsa-support --disable-libsndfile-support --disable-portaudio-support --disable-oss-support --disable-midishare --disable-jack-support --disable-coreaudio --disable-coremidi --disable-dart --disable-lash --disable-ladcca --disable-aufile-support --disable-dbus-support --without-readline
-    # --enable-debug
-    make -j`nproc` CFLAGS="-fPIC -fno-strict-aliasing -O3 -DDEFAULT_SOUNDFONT=\\\"\\\" -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} $DARWIN_ARCH_FLAGS" CPPFLAGS="-fPIC -fno-strict-aliasing -O3 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} $DARWIN_ARCH_FLAGS" CXXFLAGS="-fPIC -fno-strict-aliasing -O3 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} $DARWIN_ARCH_FLAGS" LDFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} $DARWIN_ARCH_FLAGS"
+    rm -fr fluidsynth-2.5.6
+    tar xvzf fluidsynth-2.5.6.tar.gz
+    cd fluidsynth-2.5.6
+    cmake . \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_SHARED_LIBS=OFF \
+        -Denable-ladspa=OFF \
+        -Denable-aufile=OFF \
+        -Denable-pulseaudio=OFF \
+        -Denable-alsa=OFF \
+        -Denable-libsndfile=OFF \
+        -Denable-portaudio=OFF \
+        -Denable-oss=OFF \
+        -Denable-midishare=OFF \
+        -Denable-jack=OFF \
+        -Denable-coreaudio=OFF \
+        -Denable-coremidi=OFF \
+        -Denable-dart=OFF \
+        -Denable-lash=OFF \
+        -Denable-dbus=OFF \
+        -Denable-readline=OFF \
+        -Denable-pipewire=OFF \
+        -Denable-sdl2=OFF \
+        -Denable-sdl3=OFF \
+        -Denable-openmp=OFF \
+        -DCMAKE_C_FLAGS="-fPIC -fno-strict-aliasing -O3" \
+        -DCMAKE_CXX_FLAGS="-fPIC -fno-strict-aliasing -O3"
+    make -j8
     cd ..
 }
 
@@ -248,9 +262,9 @@ build_qscintilla() {
     tar xvzf QScintilla_src-2.14.0.tar.gz 
     cd QScintilla_src-2.14.0/src
     echo "CONFIG += staticlib" >> qscintilla.pro
-    $QMAKE QMAKE_CFLAGS+="-arch arm64 -arch x86_64" QMAKE_CXXFLAGS+="-arch arm64 -arch x86_64" QMAKE_LFLAGS+="-arch arm64 -arch x86_64"
+    $QMAKE QMAKE_CFLAGS+="-march=native" QMAKE_CXXFLAGS+="-march=native" QMAKE_LFLAGS+="-march=native"
     # install_name_tool can't handle fat archive members. Not needed for a static lib anyway.
-    sed -i '' '/install_name_tool -id/d' Makefile
+    # sed -i '' '/install_name_tool -id/d' Makefile
     patch -p0 <../../qscintilla.patch
     make -j`nproc`
     cd ../..

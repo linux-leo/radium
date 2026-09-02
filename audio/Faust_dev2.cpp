@@ -611,7 +611,7 @@ class Faust2LibsndfileReader : public LibsndfileReader
 public:
 
 	Faust2LibsndfileReader()
-		: LibsndfileReader(true)
+		: LibsndfileReader()
 	{}
 	
 	// Check that the file exists and is readable.
