@@ -783,13 +783,7 @@ static dsp_factory *create_factory(const FaustDev2Data *devdata,
 #if !defined(WITHOUT_LLVM_IN_FAUST_DEV)
 	}else{
 		llvm_factory = createDSPFactoryFromString("FaustDev2", devdata->code.toUtf8().constData(), argc, argv,
-#if FOR_LINUX
-												  "x86_64-pc-linux-gnu",
-#elif FOR_MACOSX
-												  MACOS_LLVM_TARGET,
-#else
-												  "",
-#endif
+												  "", // Let Faust handle the target
 												  error_msg, optlevel);
 		factory = llvm_factory;
 #endif

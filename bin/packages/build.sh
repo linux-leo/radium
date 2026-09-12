@@ -106,7 +106,7 @@ build_faust() {
 	#patch -p0 < ../faust_soundfiles_clickfix.patch
 	patch -p0 < ../faust_soundfile_padding.patch
 	patch -p0 < ../faust_fopenat_nochdir.patch
-	
+
 	### this line is needed to build on artix
 	#export LIBNCURSES_PATH=$(shell find /usr -name libncursesw_g.a)
     
@@ -312,11 +312,11 @@ build_xcb() {
 source ./build_python27.sh
 
 build_faust
-build_qhttpserver
-build_gc
-build_fluidsynth
-build_python27
-build_qscintilla # Note: Linking fails on Mac. Just ignore it.
+#build_qhttpserver
+#build_gc
+#build_fluidsynth
+#build_python27
+#build_qscintilla # Note: Linking fails on Mac. Just ignore it.
 
 if uname -s |grep Linux ; then
     if ! arch |grep -e arm -e aarch64 ; then
