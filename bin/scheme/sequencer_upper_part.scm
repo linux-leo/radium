@@ -837,7 +837,6 @@
                       (define x1 (floor x))
                       (define x2 (+ x1 0.6))
                       
-                      (<gui> :draw-line gui "#ffffffff" x2 y1 x2 y2 0.7)
                       (<gui> :draw-line gui "black" x1 y1 x1 y2 1.2)
                       )))
               (set! last-painted-bar-num barnum)

@@ -1852,7 +1852,7 @@ bool MIXER_start(void){
   
   R_ASSERT(THREADING_is_main_thread());
 
-#if 1 //defined(RELEASE)
+#if 0 //defined(RELEASE)
 
   if (have_libjack()==0) {
     

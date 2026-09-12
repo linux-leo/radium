@@ -212,7 +212,7 @@ export QSCINTILLA_PATH=`pwd`/bin/packages/QScintilla_src-2.14.0/src
 
 if ! is_0 $INCLUDE_FAUSTDEV ; then
     #FAUSTLDFLAGS="-L `pwd`/bin/packages/faust/build/lib/libfaust.a -lcrypto -lncurses"
-    FAUSTLDFLAGS="-L `pwd`/bin/packages/faust/build/lib/ -lfaust"
+    FAUSTLDFLAGS="-L `pwd`/bin/packages/faust/build/lib/ -lfaust -ledit"
 	if ! arch |grep -e arm -e aarch64 ; then
 		FAUSTLDFLAGS="$FAUSTLDFLAGS -lcrypto -lncurses"
 	fi
@@ -262,8 +262,8 @@ fi
 export OS_JUCE_LDFLAGS="-lasound -pthread -lrt -lX11 -lXext "
 
 #LIBGIG_LDFLAGS="bin/packages/libgig/src/.libs/RIFF.o bin/packages/libgig/src/.libs/SF.o"
-FLUIDSYNTH_LDFLAGS="bin/packages/fluidsynth-1.1.6/src/.libs/libfluidsynth.a `$PKG --libs glib-2.0`"
-export OS_LDFLAGS="$QSCINTILLA_PATH/libqscintilla2_qt6.a $FAUSTLDFLAGS $PDLDFLAGS pluginhost/Builds/Linux/build/libMyPluginHost.a $OS_JUCE_LDFLAGS `$PKG --libs lrdf` $GCDIR/.libs/libgc.a $PYTHONLIBPATH $PYTHONLIBNAME `$PKG --libs sndfile` `$PKG --libs samplerate` `$PKG --libs liblo` -lxcb -lxkbcommon-x11 -lxkbcommon $FLUIDSYNTH_LDFLAGS $RADIUM_BFD_LDFLAGS -liberty `$PKG --libs freetype2`"
+FLUIDSYNTH_LDFLAGS="bin/packages/fluidsynth-2.5.6/src/libfluidsynth.a `$PKG --libs glib-2.0`"
+export OS_LDFLAGS="$QSCINTILLA_PATH/libqscintilla2_qt6.a $FAUSTLDFLAGS $PDLDFLAGS pluginhost/Builds/Linux/build/libMyPluginHost.a $OS_JUCE_LDFLAGS `$PKG --libs lrdf` $GCDIR/.libs/libgc.a $PYTHONLIBPATH $PYTHONLIBNAME `$PKG --libs sndfile` `$PKG --libs samplerate` `$PKG --libs liblo` -lxcb -lxkbcommon-x11 -lxkbcommon -lzstd $FLUIDSYNTH_LDFLAGS $RADIUM_BFD_LDFLAGS -liberty `$PKG --libs freetype2`"
 #`$PKGqt --libs Qt6X11Extras`"
 # -lX11-xcb -lxcb-keysyms -lxcb-xkb
 

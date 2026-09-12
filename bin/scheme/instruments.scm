@@ -2976,10 +2976,7 @@ ra.evalScheme "(pmg-start (ra:create-new-instrument-conf) (lambda (descr) (creat
 
 (define (get-instrument-background-color gui instrument-id)
   (if (<ra> :is-legal-instrument instrument-id)
-      (<gui> :mix-colors
-             (<ra> :get-instrument-color instrument-id)
-             (<gui> :get-background-color gui)
-             0.5)
+      (<ra> :get-instrument-color instrument-id)
       "#666660"))
 
 (define (get-instrument-border-color instrument-id)

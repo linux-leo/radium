@@ -38,21 +38,11 @@ static inline QColor mix_colors(const QColor &c1, const QColor &c2, float how_mu
 
   float a = a1 * alpha1 + a2 * alpha2;
 
-  if(c1.red()==0 && c1.green()==0 && c1.blue()==0){ // some of the black lines doesn't look look very good.
-    
-    float r = 0.3*a1 + c2.red()*a2;
-    float g = 0.3*a1 + c2.green()*a2;
-    float b = 0.3*a1 + c2.blue()*a2;
-    return QColor::fromRgbF(r,g,b,a);
-    
-  }else{
+  float r = sqrtf(red1*red1*a1 + red2*red2*a2);
+  float g = sqrtf(green1*green1*a1 + green2*green2*a2);
+  float b = sqrtf(blue1*blue1*a1 + blue2*blue2*a2);
 
-    float r = sqrtf(red1*red1*a1 + red2*red2*a2);
-    float g = sqrtf(green1*green1*a1 + green2*green2*a2);
-    float b = sqrtf(blue1*blue1*a1 + blue2*blue2*a2);
-
-    return QColor::fromRgbF(r,g,b,a);
-  }
+  return QColor::fromRgbF(r,g,b,a);
 }
 
 #endif
