@@ -1073,7 +1073,7 @@ static void updatePalette(EditorWidget *my_widget, QWidget *widget, QPalette &pa
   {
     QColor c = get_qcolor(TEXT_COLOR_NUM);
     //QColor black(QColor("black"));
-    c.setAlpha(180);
+    //c.setAlpha(180);
     //black.setAlpha(108);
 
     pal.setColor(QPalette::Active, QPalette::WindowText, c);
