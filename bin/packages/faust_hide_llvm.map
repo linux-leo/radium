@@ -1,0 +1,8 @@
+{
+    local:
+        extern "C++" {
+            llvm::*;
+        };
+        # Also hide template instantiations and RTTI involving namespace llvm.
+        *N4llvm*;
+};
