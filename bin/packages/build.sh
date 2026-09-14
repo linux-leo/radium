@@ -133,8 +133,17 @@ build_faust() {
 
 	echo "\n\nNote: Faust might fail if built with gcc. To work around that, simply build faust with clang instead, temporarily setting RADIUM_USE_CLANG=1 only when building faust.\n\n"
 	
+	# Keep embedded archive symbols private on ELF, so LLVM globals cannot
+	# collide with Mesa's LLVM and be destroyed twice at shutdown.
+	local faust_link_options="-DLINK_LLVM_STATIC=ON"
+	if [[ "$(uname -s)" == Linux ]]; then
+		# Also hide LLVM inline methods emitted by Faust's own object files.
+		cp ../faust_hide_llvm.map build/faust_hide_llvm.map
+		faust_link_options="$faust_link_options -DCMAKE_SHARED_LINKER_FLAGS=-Wl,--exclude-libs,ALL,--version-script=../faust_hide_llvm.map"
+	fi
+
 	# release build
-	BUILDOPT="--config Release -j${JOBS}" VERBOSE=1 CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" CMAKEOPT="-DCMAKE_BUILD_TYPE=Release -DSELF_CONTAINED_LIBRARY=on -DCMAKE_CXX_COMPILER=`which $DASCXX` -DCMAKE_C_COMPILER=`which $DASCC` -DCMAKE_EXE_LINKER_FLAGS=-ledit" make most
+	BUILDOPT="--config Release -j${JOBS}" VERBOSE=1 CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" CMAKEOPT="-DCMAKE_BUILD_TYPE=Release -DSELF_CONTAINED_LIBRARY=on -DCMAKE_CXX_COMPILER=`which $DASCXX` -DCMAKE_C_COMPILER=`which $DASCC` $faust_link_options -DCMAKE_EXE_LINKER_FLAGS=-ledit" make most
 	
 	if ! is_0 $FAUST_USES_LLVM ; then
 		export PATH=$ORGTEMPPATH
