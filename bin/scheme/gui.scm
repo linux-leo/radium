@@ -560,6 +560,53 @@
           
           layout)
 
+;; alpha profile for the automation/peak indicator in sliders: 0.1 at the outer parts,
+;; 0.25 next, 1.0 in the middle pixel.
+(define (slider-indicator-profile k)
+  (cond ((= k 0) 0.1)
+        ((= k 1) 0.25)
+        ((= k 2) 1.0)
+        ((= k 3) 0.25)
+        ((= k 4) 0.1)
+        (else 0.0)))
+
+;; subpixel-blended alpha for output pixel column j when the indicator is at the float position pos.
+(define (slider-indicator-alpha pos j)
+  (define base (floor pos))
+  (define frac (- pos base))
+  (+ (if (< j 5)
+         (* (- 1.0 frac) (slider-indicator-profile j))
+         0.0)
+     (if (> j 0)
+         (* frac (slider-indicator-profile (- j 1)))
+         0.0)))
+
+;; draws the 5 pixels wide automation/peak indicator (fading out at the edges) in a slider.
+(define (paint-vertical-slider-indicator gui color x y1 y2)
+  (define base (floor x))
+  (for-each (lambda (j)
+              (define alpha-here (slider-indicator-alpha x j))
+              (when (> alpha-here 0.0)
+                (<gui> :filled-box gui
+                       (<gui> :set-alpha-for-color color alpha-here)
+                       (+ base -1 j) y1
+                       (+ base j)   y2
+                       -1 -1 *no-gradient*)))
+            '(0 1 2 3 4 5)))
+
+;; same, but horizontal (used by the mixer strip volume slider).
+(define (paint-horizontal-slider-indicator gui color x1 y x2)
+  (define base (floor y))
+  (for-each (lambda (j)
+              (define alpha-here (slider-indicator-alpha y j))
+              (when (> alpha-here 0.0)
+                (<gui> :filled-box gui
+                       (<gui> :set-alpha-for-color color alpha-here)
+                       x1 (+ base -1 j)
+                       x2 (+ base j)
+                       -1 -1 *no-gradient*)))
+            '(0 1 2 3 4 5)))
+
 ;; returns actual background color
 (delafina (paint-pan-slider :gui :x1 :y1 :x2 :y2
                             :value ;; -90 -> 90
@@ -568,15 +615,19 @@
                             :is-hovering
                             :automation-slider-value #f
                             :automation-color #f
+                            :rounding 5
+                            :hover-lighter 1.1
+                            :border-width 2
+                            :border-rounding 5
                             )
   (define background (if is-on
                          (<gui> :mix-colors background-color "black" 0.39)
                          (<gui> :mix-colors background-color "white" 0.95)))
 
   (if is-hovering
-      (set! background (<gui> :make-color-lighter background 1.1)))
+      (set! background (<gui> :make-color-lighter background hover-lighter)))
   
-  (<gui> :filled-box gui background x1 y1 x2 y2 5 5 *no-gradient*)
+  (<gui> :filled-box gui background x1 y1 x2 y2 rounding rounding *no-gradient*)
   (define col1 (<gui> :mix-colors "white" background 0.4))
   (define col2 (<gui> :mix-colors "#010101" background 0.5))
 
@@ -584,20 +635,24 @@
   
   (define inner-width/2 (scale 1 0 18 0 (get-fontheight)))
   (define outer-width/2 (* inner-width/2 2))
-  
-  (define middle (scale value -90 90 (+ inner-width/2 outer-width/2) (- width (+ inner-width/2 outer-width/2))))
-  
-  (<gui> :filled-box gui col1 (+ x1 (- middle inner-width/2))               (+ y1 2) (+ x1 middle inner-width/2)               (- y2 3) -1 -1 *no-gradient*)
-  (<gui> :filled-box gui col2 (+ x1 (- middle inner-width/2 outer-width/2)) (+ y1 2) (+ x1 (- middle inner-width/2))           (- y2 3) -1 -1 *no-gradient*)
-  (<gui> :filled-box gui col2 (+ x1 (+ middle inner-width/2))               (+ y1 2) (+ x1 middle inner-width/2 outer-width/2) (- y2 3) -1 -1 *no-gradient*)
-  ;;(<gui> :draw-text gui "white" (<-> value "o") 0 0 width height #t)
 
+  (when is-on
+    (define middle (scale value -90 90 (+ inner-width/2 outer-width/2) (- width (+ inner-width/2 outer-width/2))))
+    
+    (<gui> :filled-box gui col1 (+ x1 (- middle inner-width/2))               (+ y1 2) (+ x1 middle inner-width/2)               (- y2 3) -1 -1 *no-gradient*)
+    (<gui> :filled-box gui col2 (+ x1 (- middle inner-width/2 outer-width/2)) (+ y1 2) (+ x1 (- middle inner-width/2))           (- y2 3) -1 -1 *no-gradient*)
+    (<gui> :filled-box gui col2 (+ x1 (+ middle inner-width/2))               (+ y1 2) (+ x1 middle inner-width/2 outer-width/2) (- y2 3) -1 -1 *no-gradient*)
+    ;;(<gui> :draw-text gui "white" (<-> value "o") 0 0 width height #t)
+    )
+  
   (when (and automation-slider-value
              (> automation-slider-value -100))
     (define middle (scale automation-slider-value -90 90 (+ inner-width/2 outer-width/2) (- width (+ inner-width/2 outer-width/2))))
-    (<gui> :draw-line gui automation-color (+ x1 middle) (+ y1 2) (+ x1 middle) (- y2 3) 2.0))
+    (paint-vertical-slider-indicator gui automation-color
+                                     (between (+ x1 1) (+ x1 middle) (- x2 5))
+                                     (+ y1 2) (- y2 3)))
   
-  (<gui> :draw-box gui "#404040" x1 y1 x2 y2 2)
+  (<gui> :draw-box gui "#404040" x1 y1 x2 y2 border-width border-rounding border-rounding)
 
   background
   )
@@ -652,12 +707,10 @@
       (get-automation-data
        (lambda (value color)
          (let* ((w (if is-current w3 1))
-                (x (between 0 (scale value 0 1 (+ x1 w) (- x2 w)) x2)))
-           (<gui> :draw-line
-                  widget color
-                  x (+ y1 w)
-                  x (- y2 w)
-                  2.0)))))
+                (x (between (+ x1 1)
+                            (scale value 0 1 (+ x1 w) (- x2 w))
+                            (- x2 5))))
+           (paint-vertical-slider-indicator widget color x (+ y1 w) (- y2 w))))))
   
   
   ;;(if show-tooltip
@@ -753,6 +806,8 @@
                        :implicit-border-width 2
                        :box-rounding #f ;; if #f, rounding will be set automatically based on checkbox size.
                        :paint-black-border #f
+                       :attention #f ;; when true, draw with a pulsing highlight. (Used by the hamburger button.)
+                       :attention-phase 0
                        )
 
   (if (not box-rounding)
@@ -786,7 +841,16 @@
       ;;(c-display "DIST: " (<gui> :color-distance background-color selected-color))
       (set! i (+ 1 i))
       (set! selected-color (<gui> :make-color-lighter selected-color 1.1))))
-  
+
+  ;; Draw with a pulsing highlight to make the button (the hamburger button) easier to notice.
+  (when attention
+    ;; How much of the original button color to keep. Lower value means more highlight.
+    (define attention-mix (vector-ref (vector 0.35 0.55 0.75 0.55)
+                                      (modulo attention-phase 4)))
+    (set! background-color (<gui> :mix-colors background-color "menu_keybinding_text" attention-mix))
+    (set! selected-color (<gui> :mix-colors selected-color "menu_keybinding_text" attention-mix)))
+
+
   ;;(if (string=? text "Solo")
   ;;    (c-display "Solo. Bc:" background-color ". is-selected:" is-selected ". selected-color:" selected-color))
   
@@ -852,6 +916,12 @@
   (if (and #f is-hovering)
       (<gui> :do-alpha gui 0.5 paintit)
       (paintit))
+
+  (when attention
+    (<gui> :draw-box gui "keyboard_focus_border"
+           (+ x1 x-border) (+ y1 y-border) (- x2 x-border) (- y2 y-border)
+           1.2
+           box-rounding box-rounding))
 
   
 
@@ -1083,7 +1153,20 @@
                      (<gui> :hide *message-gui*)
                      #f)) ;; close it.
                    
-            (set! *message-gui* gui))
+            (set! *message-gui* gui)
+
+            ;; Escape closes the message window, but only when it has keyboard
+            ;; focus. (When the editor has keyboard focus, the key is handled
+            ;; by the editor instead and never reaches this window.)
+            (<gui> :add-key-callback gui
+                   (lambda (presstype key)
+                     (if (and (= presstype 0) ;; Key press.
+                              (string=? key "Esc"))
+                         (begin
+                           (<gui> :close gui) ;; Same as pressing the "Hide" button.
+                           #t)
+                         #f)))
+            )
           
           (reopen-gui-at-curr-pos :gui *message-gui*
                                   :parentgui -2)
@@ -1732,9 +1815,7 @@
 
 (define *last-pressed-menu-entry-widget-mouse-button* 0)
 
-(define (draw-keybinding gui x1 y1 x2 y2 keybinding)
-  (define nonhover-background-color (<gui> :mix-colors "low_background" "#ffffff" 0.97))
-  
+(define* (draw-keybinding gui x1 y1 x2 y2 keybinding (nonhover-background-color (<gui> :mix-colors "low_background" "#ffffff" 0.97)))
   (define is-unassigned (string=? keybinding "unassigned"))
 
   (<gui> :my-draw-text gui
@@ -1811,19 +1892,50 @@
     ;;(c-display "x1/y1:" checkbox-x1 checkbox-y1 (<gui> :width checkbox) before-and-after-width)
     (<gui> :add widget checkbox checkbox-x1 checkbox-y1))
     
-  (define nonhover-background-color (<gui> :mix-colors "low_background" "#ffffff" 0.97))
-  (define hover-background-color "high_background") ;;(<gui> :mix-colors (<gui> :get-background-color widget) "#010101" 0.5))
-  (define border-color (<gui> :mix-colors hover-background-color "#010101" 0.5))
+  (define noncurrent-background-color "menu_entry_background")
+  (define current-background-color "menu_current_entry")
+  (define current-marker-color "menu_text")
+  (define hover-background-color (<gui> :mix-colors "menu_current_entry" "menu_entry_background" 0.5))
+  (define border-color (<gui> :mix-colors "high_background" "#010101" 0.5))
   
   (<gui> :add-paint-callback widget
          (lambda (width height)
-           ;;(c-display "  paint menu entry. Disabled: " name (<gui> :is-enabled widget) (<gui> :get-background-color widget) ". gui:" widget ". :last-hovered" (<ra> :get-last-hovered-popup-menu-entry))
-           
-           (let ((background-color (if (and (= widget (<ra> :get-last-hovered-popup-menu-entry))
-                                            (<gui> :is-enabled widget))
-                                       hover-background-color
-                                       nonhover-background-color)))
+           ;;(c-display "  paint menu entry. Disabled: " name (<gui> :is-enabled widget) (<gui> :get-background-color widget) ". gui:" widget ". :current" (<ra> :is-current-popup-menu-entry widget))
+           (define enabled (<gui> :is-enabled widget))
+           (define is-current (and enabled
+                                   (<ra> :is-current-popup-menu-entry widget)))
+           (define is-hovered (and enabled
+                                   (not is-current)
+                                   (= widget (<ra> :get-last-hovered-popup-menu-entry))))
+           (define background-color (cond (is-current current-background-color)
+                                          (is-hovered hover-background-color)
+                                          (else noncurrent-background-color)))
+
+           ;; The entry widget is registered as painting all its pixels itself (see
+           ;; :dont-autofill-background above), so Qt does not paint the menu background
+           ;; beneath it. The current/hover colors are partially transparent, so paint
+           ;; the opaque entry background first; otherwise the entry becomes transparent
+           ;; (visible e.g. on the first entry of a sub menu, which is made current
+           ;; before it is painted).
+           (<gui> :filled-box widget noncurrent-background-color 0 0 width height -1 -1 *no-gradient*)
+           (when (not (string=? background-color noncurrent-background-color))
              (<gui> :filled-box widget background-color 0 0 width height -1 -1 *no-gradient*))
+
+           ;; Draw a small right-pointing triangle to the left of the name to
+           ;; clearly mark the current entry (the one return/click activates).
+           (when (and is-current
+                      (not is-checkbox))
+             (define marker-width (max 3 (round (* fontheight 0.35))))
+             (define marker-height (max 4 (round (* fontheight 0.45))))
+             (define marker-x (/ (+ (/ b 2.0)
+                                    (+ b before-and-after-width))
+                                 2.0))
+             (define marker-y (/ height 2.0))
+             (<gui> :filled-polygon widget
+                    current-marker-color
+                    (vector (- marker-x (/ marker-width 2.0)) (- marker-y (/ marker-height 2.0))
+                            (- marker-x (/ marker-width 2.0)) (+ marker-y (/ marker-height 2.0))
+                            (+ marker-x (/ marker-width 2.0)) marker-y)))
            
            (if is-first
                (<gui> :draw-line widget
@@ -1849,7 +1961,7 @@
            (<gui> :my-draw-text widget
                   (if (<gui> :is-enabled widget)
                       "menu_text"
-                      (<gui> :mix-colors "menu_text" nonhover-background-color 0.5))
+                      (<gui> :mix-colors "menu_text" noncurrent-background-color 0.5))
                   name
                   (+ b before-and-after-width) b (- width b) (- height b)
                   #f ;; wrap lines
@@ -1860,7 +1972,7 @@
 
            (when (not (string=? "" shortcut))
              (define shortcut-x1 (- width (+ shortcut-width before-and-after-width b)))
-             (draw-keybinding widget shortcut-x1 b (- width b) (- height b) shortcut)
+             (draw-keybinding widget shortcut-x1 b (- width b) (- height b) shortcut noncurrent-background-color)
              )))
 
   (<gui> :add-mouse-callback widget

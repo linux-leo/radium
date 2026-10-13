@@ -935,6 +935,9 @@ static const struct TempoGraph create_TempoGraph(const struct Tracker_Windows *w
 static void create_tempograph(const struct Tracker_Windows *window, const struct WBlocks *wblock){
   const TempoGraph tg = create_TempoGraph(window,wblock);
 
+  if (tg.num_points <= 1)
+    return;
+
   float width = get_thickness(2.3);
 
   //printf("min/max: %d, %d\n",(int)min,(int)max);
@@ -1798,7 +1801,7 @@ static void create_pitches(const struct Tracker_Windows *window, const struct WB
         float y2 = nodeline->y2;
 
         //printf("nodeline: %f,%f -> %f,%f\n", x1, y1, x2, y2);
-        if (vertical_line)
+        if (vertical_line && !wtrack->is_wide)
           y1 = next_line_y1(window, y1);
 
         if (line_color.isNull())
@@ -1808,7 +1811,7 @@ static void create_pitches(const struct Tracker_Windows *window, const struct WB
         //if (vertical_line)
         width *= 2;
         
-        if (y2 > y1 + 2){
+        if (wtrack->is_wide || y2 > y1 + 2){
           GE_line(line_color, x1, y1, x2, y2, width);
           
           if (logtype==LOGTYPE_HOLD)
@@ -2892,6 +2895,20 @@ static void create_track(const struct Tracker_Windows *window, const struct WBlo
   float track_pitch_min, track_pitch_max;
   TRACK_get_min_and_max_pitches(wtrack->track, &track_pitch_min, &track_pitch_max);
   
+  // note/pitch names / cents
+  if( (wtrack->notesonoff==1) || wtrack->centtext_on) {
+
+    bool show_notes = wtrack->notesonoff==1;
+    
+    const Trss &trss = TRSS_get(wblock, wtrack);
+
+    auto i = trss.constBegin();
+    while (i != trss.constEnd()) {
+      create_track_text(window, wblock, wtrack, i.value(), i.key(), show_notes);
+      ++i;
+    }
+  }
+
   // velocities and pitches
   {  
     const struct Notes *note=wtrack->track->gfx_notes!=NULL ? wtrack->track->gfx_notes : wtrack->track->notes;
@@ -2906,20 +2923,6 @@ static void create_track(const struct Tracker_Windows *window, const struct WBlo
       
       create_track_velocities(window, wblock, wtrack, note, pitch_nodelines, pitch_reader, track_pitch_min, track_pitch_max);
       note = NextNote(note);
-    }
-  }
-
-  // note/pitch names / cents
-  if( (wtrack->notesonoff==1) || wtrack->centtext_on) {
-
-    bool show_notes = wtrack->notesonoff==1;
-    
-    const Trss &trss = TRSS_get(wblock, wtrack);
-
-    auto i = trss.constBegin();
-    while (i != trss.constEnd()) {
-      create_track_text(window, wblock, wtrack, i.value(), i.key(), show_notes);
-      ++i;
     }
   }
 

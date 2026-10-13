@@ -70,6 +70,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. */
 
 #include "../Qt/Qt_instruments_proc.h"
 #include "../Qt/Qt_colors_proc.h"
+#include "../Qt/Qt_PopupMenu_proc.h"
 
 #include "../common/patch_proc.h"
 #include "../common/undo_patchname_proc.h"
@@ -305,6 +306,10 @@ void setUndoBypass(bool doit){
 
 
 void selectInstrumentForTrack(int tracknum){
+  // Open the popup menu at the top of the editor, i.e. just below the whole track header
+  // (both the "(click me)" name widget and the slider row below it), instead of at the
+  // mouse pointer. tracknum -1 means the current track.
+  GFX_set_track_header_popup_position(tracknum);
   S7CALL2(void_int,"select-track-instrument", tracknum);
 }
 
@@ -706,6 +711,66 @@ instrument_t cloneAudioInstrument(instrument_t instrument_id, float x, float y, 
   return new_patch->id;
 }
 
+// Converts an old Pd instrument to the corresponding Pd2 instrument, keeping
+// the full instrument state (pd patch, controllers, effects, etc.).
+// Returns the new instrument, or an illegal instrument if the conversion failed.
+instrument_t convertPd1ToPd2(instrument_t instrument_id, const_char *name)
+{
+  radium::ScopedUndo scoped_undo;
+
+  struct Patch *old_patch = getAudioPatchFromNum(instrument_id);
+  if (old_patch==NULL || old_patch->patchdata==NULL)
+  {
+    return createIllegalInstrument();
+  }
+
+  SoundPlugin *old_plugin = (SoundPlugin*)old_patch->patchdata;
+  if (strcmp(old_plugin->type->type_name,"Pd"))
+  {
+    handleError("Can not convert instrument %d to Pd2: It is a \"%s\" instrument, not a Pd instrument.", (int)instrument_id.id, old_plugin->type->type_name);
+    return createIllegalInstrument();
+  }
+
+  const char *plugin_name = old_plugin->type->name;
+
+  SoundPluginType *pd2_type = PR_get_plugin_type_by_name(NULL, "Pd2", plugin_name);
+  if (pd2_type==NULL || strcmp(pd2_type->type_name,"Pd2") || strcmp(pd2_type->name,plugin_name))
+  {
+    handleError("Can not convert \"%s\" to Pd2: Could not find a Pd2 instrument with that name.", plugin_name);
+    return createIllegalInstrument();
+  }
+
+  hash_t *state = PATCH_get_state(old_patch);
+  hash_t *audio_state = HASH_get_hash(state, "audio");
+  if (audio_state==NULL)
+  {
+    return createIllegalInstrument();
+  }
+
+  // The keys already exist in the state, so remove them first.
+  // (HASH_put_chars asserts when overwriting an existing value in debug mode.)
+  HASH_remove(audio_state, "type_name");
+  HASH_put_chars(audio_state, "type_name", "Pd2");
+
+  HASH_remove(audio_state, "name");
+  HASH_put_chars(audio_state, "name", plugin_name);
+
+  // Same naming behavior as createAudioInstrumentFromDescription: the name is the explicit argument.
+  HASH_remove(state, "name");
+  if (name!=NULL && name[0]==0)
+  {
+    name = NULL;
+  }
+
+  struct Patch *new_patch = PATCH_create_audio(NULL, NULL, name, state, true, true, 0, 0);
+  if (new_patch==NULL)
+  {
+    return createIllegalInstrument();
+  }
+
+  return new_patch->id;
+}
+
 
 
 dyn_t createNewInstrumentConf(float x, float y,
@@ -777,7 +842,7 @@ bool instrumentHasBeenUsed(instrument_t instrument_id){
 }
 
 bool hasPureData(void){
-#if WITH_PD
+#if WITH_PD || WITH_PD2
   return true;
 #else
   return false;
@@ -1209,7 +1274,7 @@ void deletePdController(instrument_t instrument_id, const char *effect_name){
     return;
   }
 
-  if (strcmp(plugin->type->type_name, "Pd")){
+  if (!PD_is_pd_type(plugin->type->type_name)){
     handleError("deletePdController: Instrument #%d is not a Pd instrument: \"%s\"", (int)instrument_id.id, plugin->type->type_name);
     return;
   }
@@ -4233,6 +4298,8 @@ void API_remove_effect_monitors_for_instrument(struct Patch *patch){
 
 void API_instruments_call_regularly(void){
   int i = 0;
+
+  bool check_automation = !useCPUFriendlyEffectSliderUpdates() || is_called_every_ms(45);
   
   while(i < g_effect_monitors.size()){
     
@@ -4276,7 +4343,7 @@ void API_instruments_call_regularly(void){
         }
       }
 
-      if (effect_monitor->monitor_automation){
+      if (effect_monitor->monitor_automation && check_automation){
         automation_now = safe_float_read(&plugin->slider_automation_values[effect_monitor->effect_num]);
         if (!equal_floats(automation_now, effect_monitor->last_automation_value)){
           effect_monitor->last_automation_value = automation_now;

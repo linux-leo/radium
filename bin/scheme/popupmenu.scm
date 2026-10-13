@@ -51,7 +51,19 @@
               
               ((not (car args))
                (loop (cdr args) keybinding-func))
-              
+               
+              ((eq? :on-left-key (car args))
+               (assert (not (null? (cdr args))))
+               (cons "[on-left-key]"
+                     (cons (list (cadr args) #f)
+                           (loop (cddr args) keybinding-func))))
+               
+              ((eq? :on-right-key (car args))
+               (assert (not (null? (cdr args))))
+               (cons "[on-right-key]"
+                     (cons (list (cadr args) #f)
+                           (loop (cddr args) keybinding-func))))
+               
               ((string-starts-with? (car args) "---")
                (cons (car args)
                      (cons (lambda _ #t)
@@ -251,8 +263,7 @@
 
 !!#
 
-(define (get-popup-menu-args args)
-  (define options (parse-popup-menu-options args))
+(define (get-popup-menu-args-from-options options)
   ;;(c-display "bbb")
   ;;(c-display "optinos:\n\n" options "\n\n")
   
@@ -303,6 +314,9 @@
               (if (null? checkboxval)
                   ((get-func n))
                   ((get-func n) (car checkboxval)))))))
+
+(define (get-popup-menu-args args)
+  (get-popup-menu-args-from-options (parse-popup-menu-options args)))
 
 (define (popup-menu-from-args popup-menu-args)
   ;;(c-display "ARGS:") (pretty-print popup-menu-args)

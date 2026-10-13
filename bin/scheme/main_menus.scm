@@ -1,6 +1,7 @@
 (provide 'main_menus.scm)
 
 (my-require 'keybindings.scm)
+(my-require 'popupmenu.scm)
 
 
 (define (include-menu-item? line)
@@ -277,16 +278,252 @@
 (define (popup-menu-from-menu-items items)
   (popup-menu (get-popup-menu-items-from-menu-items items)))
 
+(define (get-recently-opened-song-filenames)
+  (let loop ((i 0)
+             (result '()))
+    (if (= i 30)
+        (reverse result)
+        (let ((filename (<ra> :get-settings (<-> "recent_song_" i) "")))
+          (if (string=? filename "")
+              (reverse result)
+              (loop (1+ i)
+                    (cons filename result)))))))
+
+(define (get-recently-opened-songs-popup-items)
+  (define filenames (get-recently-opened-song-filenames))
+  (if (null? filenames)
+      (list "No recently opened songs" :enabled #f (lambda () #f))
+      (map (lambda (filename)
+             (list filename
+                   (lambda ()
+                     (<ra> :load-song (<ra> :get-path filename)))))
+           filenames)))
+
+;; Pure function so it can be tested with ***assert*** below.
+(define (replace-recent-menu items recent-items)
+  (map (lambda (item)
+         (cond ((and (list? item)
+                     (not (null? item))
+                     (string? (car item))
+                     (string=? (car item) "Recent-main-menu-99992222"))
+                (if recent-items
+                    (list "Recently-opened-songs" recent-items)
+                    '()))
+               ((and (list? item)
+                     (not (null? item))
+                     (string? (car item))
+                     (not (null? (cdr item)))
+                     (list? (cadr item)))
+                (list (car item)
+                      (replace-recent-menu (cadr item) recent-items)))
+               (else
+                item)))
+       items))
+
+(***assert*** (replace-recent-menu (list "separator"
+                                         (list "Recent-main-menu-99992222"
+                                               (list "x"))
+                                         (list "Sub"
+                                               (list (list "Recent-main-menu-99992222"
+                                                           (list "y")))))
+                                   (list "recent"))
+              (list "separator"
+                    (list "Recently-opened-songs"
+                          (list "recent"))
+                    (list "Sub"
+                          (list (list "Recently-opened-songs"
+                                      (list "recent"))))))
+
+(define *main-menu-search-popup-args* #f)
+
+(define *main-menu-search-options* #f)
+
+(define *main-menu-items* #f)
+
+(define (get-main-menu-items)
+  (when (not *main-menu-items*)
+    (set! *main-menu-items* (get-menu-items2)))
+  *main-menu-items*)
+
+;; Removes the "Recent-main-menu-99992222" submenu from a parsed popup menu options list.
+;; (Temporarily disabled while investigating why the popup takes long time to appear.)
+(define (remove-recent-from-options options)
+  (let loop ((options options)
+             (skip-depth 0)
+             (result '()))
+    (if (null? options)
+        (reverse result)
+        (let ((text (car options))
+              (callback (cadr options))
+              (rest (cddr options)))
+          (cond ((> skip-depth 0)
+                 (if (string? text)
+                     (cond ((string-starts-with? text "[submenu start]")
+                            (loop rest (1+ skip-depth) result))
+                           ((string-starts-with? text "[submenu end]")
+                            (loop rest (1- skip-depth) result))
+                           (else
+                            (loop rest skip-depth result)))
+                     (loop rest skip-depth result)))
+                ((and (string? text)
+                      (string=? text "[submenu start]Recent-main-menu-99992222"))
+                 (loop rest 1 result))
+                (else
+                 (loop rest 0 (cons callback (cons text result)))))))))
+
+(define (assemble-main-menu-search-options menus-options)
+  (apply append
+         (map (lambda (menu-options)
+                (append (list (<-> "[submenu start]" (car menu-options))
+                              (lambda () #t))
+                        (cdr menu-options)
+                        (list "[submenu end]"
+                              (lambda () #t))))
+              menus-options)))
+
+(define *main-menu-popup-generation* 0)
+
+;; Called from C++ when the hamburger popup is closed, to cancel any scheduled opening of it.
+(define (FROM_C-cancel-main-menu-popup)
+  (set! *main-menu-popup-generation* (+ *main-menu-popup-generation* 1)))
+
+;; A generation of #f means the popup is not the hamburger popup, and can't be cancelled.
+(define (main-menu-popup-generation-is-current? generation)
+  (or (not generation)
+      (= generation *main-menu-popup-generation*)))
+
+(define (make-main-menu-search-popup-args menus-options)
+  (define args (get-popup-menu-args-from-options (assemble-main-menu-search-options menus-options)))
+  (set! *main-menu-search-popup-args* args)
+  args)
+
+(define (open-main-menu-search-popup args generation)
+  (<ra> :schedule 0
+        (lambda ()
+          (when (main-menu-popup-generation-is-current? generation)
+            (popup-menu-from-args args))
+          #f)))
+
+(define (open-main-menu-search-popup-from-options menus-options generation)
+  (when (main-menu-popup-generation-is-current? generation)
+    (open-main-menu-search-popup (make-main-menu-search-popup-args menus-options) generation)))
+
+;; Builds the options one top-level menu at a time, scheduling a new step between
+;; each menu. generation-is-current? and kont are supplied by the caller.
+(define (build-main-menu-search-popup menus chunks generation-is-current? kont)
+  (when (generation-is-current?)
+    (if (null? menus)
+        (let ((menus-options (reverse chunks)))
+          (set! *main-menu-search-options* menus-options)
+          (kont menus-options))
+        ;; Schedule the processing of each menu, so that the gui gets a chance to repaint between each top-level menu.
+        (<ra> :schedule 0
+              (lambda ()
+                (when (generation-is-current?)
+                  (let* ((menu (car menus))
+                         (menu-options (remove-recent-from-options
+                                        (parse-popup-menu-options
+                                         (get-popup-menu-items-from-menu-items (menu :sub-menu))))))
+                    (c-display "SEARCHPOPUP chunk" (menu :text) (<ra> :get-ms))
+                    (build-main-menu-search-popup (cdr menus)
+                                                  (cons (cons (menu :text) menu-options) chunks)
+                                                  generation-is-current?
+                                                  kont)))
+                #f)))))
+
+(define* (popup-search-all-menus (generation #f))
+  (if *main-menu-search-popup-args*
+      (open-main-menu-search-popup *main-menu-search-popup-args* generation)
+      (when (main-menu-popup-generation-is-current? generation)
+        ;; Normally the options and args are built during startup (see generate-main-menus),
+        ;; so this fallback is only used if the popup is opened before they are ready.
+        (<ra> :schedule 1
+              (lambda ()
+                (when (main-menu-popup-generation-is-current? generation)
+                  (if *main-menu-search-options*
+                      (open-main-menu-search-popup-from-options *main-menu-search-options* generation)
+                      (build-main-menu-search-popup
+                       (get-main-menu-items)
+                       '()
+                       (lambda ()
+                         (main-menu-popup-generation-is-current? generation))
+                       (lambda (menus-options)
+                         (open-main-menu-search-popup-from-options menus-options generation)))))
+                #f)))))
+
+(define (get-keybindings-as-assoc-list)
+  (hash-table->alist (<ra> :get-keybindings-from-keys)))
+
+;; The keybindings that the cached search popup data (*main-menu-search-options* and
+;; *main-menu-search-popup-args*) was built from. #f means it hasn't been built yet.
+(define *main-menu-search-keybindings* #f)
+
+;; Rebuilds the cached search popup data. Called when the keybindings have changed.
+(define (rebuild-main-menu-search-popup)
+  ;; Must re-parse the menus since shortcuts are part of the parsed data.
+  (set! *main-menu-items* #f)
+  (define menus-options
+    (map (lambda (menu)
+           (cons (menu :text)
+                 (remove-recent-from-options
+                  (parse-popup-menu-options
+                   (get-popup-menu-items-from-menu-items (menu :sub-menu))))))
+         (get-main-menu-items)))
+  (set! *main-menu-search-options* menus-options)
+  (make-main-menu-search-popup-args menus-options)
+  (set! *main-menu-search-keybindings* (get-keybindings-as-assoc-list)))
+
+;; Shortcuts are part of the cached data, so it must be rebuilt if the keybindings changed.
+;; The data is built during program startup (see generate-main-menus), and this callback
+;; only rebuilds it when the keybindings actually changed, so that opening the hamburger
+;; menu never has to wait for it.
+(add-reload-keybindings-callback (lambda ()
+                                   (when (not (equal? (get-keybindings-as-assoc-list)
+                                                      *main-menu-search-keybindings*))
+                                     ;; If the data hasn't been built yet, generate-main-menus
+                                     ;; will build it later using the new keybindings.
+                                     (when *main-menu-search-options*
+                                       (rebuild-main-menu-search-popup)))))
+
+;; Called from the hamburger button in the bottom bar and from the left alt key.
+(define (FROM_C-popup-main-menus)
+  (set! *main-menu-popup-generation* (+ *main-menu-popup-generation* 1))
+  (define generation *main-menu-popup-generation*)
+  ;; Must be scheduled since this function can be called from within a native event filter.
+  (<ra> :schedule 0
+        (lambda ()
+          (when (main-menu-popup-generation-is-current? generation)
+            (popup-search-all-menus generation))
+          #f)))
+
+;; Called when right-clicking the hamburger button in the bottom bar.
+(define (FROM_C-show-hamburger-keybinding-popup)
+  (popup-menu (get-keybinding-configuration-popup-menu-entries :ra-funcname "ra:open-main-menu-popup"
+                                                               :args '()
+                                                               :focus-keybinding "FOCUS_EDITOR FOCUS_MIXER FOCUS_SEQUENCER")
+              "-------------"
+              "Help keybindings" show-keybinding-help-window))
+
 (define (generate-main-menus)
   (<ra> :wait-until-nsm-has-inited)
+  (define menus-options '())
   (for-each (lambda (menu)
-              (apply ra:add-menu-menu2 
+              (define menu-items (get-popup-menu-items-from-menu-items (menu :sub-menu)))
+              (define menu-options (parse-popup-menu-options menu-items))
+              (apply ra:add-menu-menu2
                      (cons (menu :text)
-                           (get-popup-menu-args
-                            (get-popup-menu-items-from-menu-items
-                             (menu :sub-menu)))))
+                           (get-popup-menu-args-from-options menu-options)))
+              ;; Cache the options for the search popup, without the Recent menu.
+              (set! menus-options
+                    (append menus-options
+                            (list (cons (menu :text)
+                                        (remove-recent-from-options menu-options)))))
               (<ra> :go-previous-menu-level))
-            (get-menu-items2)))
+            (get-main-menu-items))
+  (set! *main-menu-search-options* menus-options)
+  ;; Also build the search popup args now, so the first open of the hamburger menu doesn't have to wait.
+  (make-main-menu-search-popup-args menus-options)
+  (set! *main-menu-search-keybindings* (get-keybindings-as-assoc-list)))
 
 #!!
 
@@ -423,4 +660,154 @@
 (<ra> :get-keybindings-from-command "ra.toggleCurrWindowFullScreen")
 (<ra> :get-keybindings-from-command "ra.toggleFullScreen")
 !!#
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Help menu: "List of included Pd externals in Pd2"
+;;;
+;;; Scans <program-dir>/pd/externals when the menu entry is clicked, and shows
+;;; the result in the message window. The rules mirror the Pd2 loader
+;;; (ensure_externals_host() in audio/Pd_plugin2.cpp): class binaries
+;;; (.pd_linux/.pd_darwin/.pd_freebsd) and abstractions (.pd, except
+;;; "*-help.pd" and "*-meta.pd"). Alias symlinks (cyclone's Append.pd_linux,
+;;; etc.) are skipped, as the loader does. The monolithic <lib>/<lib>.pd_linux
+;;; binary is reported in its group's header instead of as a class.
+;;;
+;;; If pd/externals/pd2-externals-credits.txt exists (generated by
+;;; build_pd_externals() in bin/packages/build.sh from the author/copyright/
+;;; license keys in pd_externals.list), each library's author, copyright and
+;;; license are also shown. The file is optional.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (pd-external-classname filename)
+  ;; Mirrors external_class_name() in audio/Pd_plugin2.cpp.
+  (cond ((string-ends-with? filename ".pd_linux")   (string-drop-right filename (string-length ".pd_linux")))
+        ((string-ends-with? filename ".pd_darwin")  (string-drop-right filename (string-length ".pd_darwin")))
+        ((string-ends-with? filename ".pd_freebsd") (string-drop-right filename (string-length ".pd_freebsd")))
+        ((string-ends-with? filename ".pd")         (string-drop-right filename (string-length ".pd")))
+        (else #f)))
+
+(***assert*** (pd-external-classname "accum.pd_linux") "accum")
+(***assert*** (pd-external-classname "acosh~.pd_darwin") "acosh~")
+(***assert*** (pd-external-classname "0x3c0x7e.pd") "0x3c0x7e")
+(***assert*** (pd-external-classname "zexy.pd_freebsd") "zexy")
+(***assert*** (pd-external-classname "libiemnet.pd_linux.so") #f)
+(***assert*** (pd-external-classname "README.md") #f)
+
+;; Returns (list class-binaries abstractions library-binary) for one library dir.
+(define (get-pd-externals-in-libdir libname libpath)
+  (define class-binaries '())
+  (define abstractions '())
+  (define library-binary #f)
+
+  ;; Sync iteration: ~1400 directory entries in total, so a few milliseconds.
+  (<ra> :iterate-directory libpath #f
+        (lambda (is-finished file-info)
+          ;; file_info is uninitialized when is-finished is #t.
+          (when (not is-finished)
+            (define filename (<ra> :get-path-string (file-info :filename)))
+            (define classname (and (not (file-info :is-dir))
+                                   (not (file-info :is-sym-link))
+                                   (pd-external-classname filename)))
+            (when (and classname
+                       (not (string-ends-with? filename "-help.pd"))
+                       (not (string-ends-with? filename "-meta.pd")))
+              (cond ((string=? classname libname) ;; the monolithic <lib>/<lib>.pd_linux
+                     (set! library-binary filename))
+                    ((string-ends-with? filename ".pd")
+                     (set! abstractions (cons classname abstractions)))
+                    (else
+                     (set! class-binaries (cons classname class-binaries))))))
+          #t)) ;; Must return non-#f, otherwise the iteration stops.
+  (list (sort class-binaries string<?)
+        (sort abstractions string<?)
+        library-binary))
+
+;; Parses one "libname|author|copyright|license" line from
+;; pd2-externals-credits.txt. Returns #f if the line is malformed.
+(define (parse-pd2-externals-credits-line line)
+  (let ((fields (map string-strip (string-split line #\|))))
+    (if (= (length fields) 4)
+        (cons (car fields) (cdr fields))
+        #f)))
+
+(***assert*** (parse-pd2-externals-credits-line "osc|Martin Peach|2006-2011 Martin Peach|GPL-2.0-or-later")
+              '("osc" "Martin Peach" "2006-2011 Martin Peach" "GPL-2.0-or-later"))
+(***assert*** (parse-pd2-externals-credits-line "broken|line")
+              #f)
+
+;; Reads <pd/externals>/pd2-externals-credits.txt, written by
+;; build_pd_externals() in bin/packages/build.sh from the author/copyright/
+;; license keys in pd_externals.list. Returns an alist mapping library name to
+;; (author copyright license). Empty when the file is missing (e.g. an
+;; externals directory built before the file was introduced).
+(define (get-pd2-externals-credits externals-path)
+  (define filename (<ra> :append-file-paths externals-path
+                         (<ra> :get-path "pd2-externals-credits.txt")))
+  (if (not (<ra> :file-exists filename))
+      '()
+      (let loop ((lines (get-all-lines-in-file filename))
+                 (credits '()))
+        (if (null? lines)
+            (reverse! credits)
+            (let ((credit (parse-pd2-externals-credits-line (car lines))))
+              (loop (cdr lines)
+                    (if credit
+                        (cons credit credits)
+                        credits)))))))
+
+;; Returns the whole listing as plain text. Can also be called from the scheme
+;; listener to dump the list to a terminal.
+(define (get-pd2-externals-text)
+  (define externals-path (<ra> :append-file-paths (<ra> :get-program-path)
+                               (<ra> :get-path "pd/externals")))
+  (if (not (<ra> :dir-exists externals-path))
+      (<-> "Could not find the Pd2 externals directory: \""
+           (<ra> :get-path-string externals-path) "\".")
+      (let ((text (<-> "Pd2 externals in \"" (<ra> :get-path-string externals-path) "\":\n"))
+            (libs '())
+            (credits (get-pd2-externals-credits externals-path)))
+        ;; First pass: just collect the library directories. They must not be
+        ;; iterated from inside the callback below: ra:iterate-directory aborts
+        ;; if it is called again while it is still running.
+        (<ra> :iterate-directory externals-path #f
+              (lambda (is-finished file-info)
+                (when (and (not is-finished)
+                           (file-info :is-dir))
+                  (set! libs (cons (cons (<ra> :get-path-string (file-info :filename))
+                                         (file-info :path))
+                                   libs)))
+                #t))
+        ;; Second pass: one directory per library.
+        (for-each (lambda (lib)
+                    (define libname (car lib))
+                    (define data (get-pd-externals-in-libdir libname (cdr lib)))
+                    (define class-binaries (car data))
+                    (define abstractions (cadr data))
+                    (define library-binary (caddr data))
+                    (set! text (<-> text "\n" libname ": "
+                                    (length class-binaries) " class binaries, "
+                                    (length abstractions) " abstractions"
+                                    (if library-binary
+                                        (<-> " (library binary: " library-binary ")")
+                                        "")
+                                    "\n"))
+                    ;; Credits made available by the same directory listing
+                    ;; (pd2-externals-credits.txt, written by build.sh).
+                    (let ((credit (assoc libname credits)))
+                      (when credit
+                        (let ((fields (cdr credit)))
+                          (set! text (<-> text "  Author: " (car fields) "\n"))
+                          (set! text (<-> text "  Copyright: " (cadr fields)
+                                          " (" (caddr fields) ")\n")))))
+                    (for-each (lambda (name)
+                                (set! text (<-> text "  " name "\n")))
+                              (append class-binaries abstractions)))
+                  (sort libs (lambda (a b)
+                               (string<? (car a) (car b)))))
+        (<-> text "\n" (length libs) " libraries.\n"))))
+
+(define (show-pd2-externals-list)
+  ;; Called from the Help menu, "List of included Pd externals in Pd2".
+  (ra:add-message (ra:get-html-from-text (get-pd2-externals-text))))
                      

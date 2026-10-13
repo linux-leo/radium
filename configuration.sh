@@ -26,6 +26,8 @@ cd $(dirname ${BASH_SOURCE[0]})
 
 source helpers.sh
 
+set_radium_build_dirs
+
 
 
 
@@ -40,6 +42,14 @@ set_var RADIUM_USE_CLANG 0
 # Only Linux-x86. Other platforms ignore this variable.
 #
 set_var INCLUDE_PDDEV 1
+
+
+
+########################################################
+# If enabled, include the Pd2 instrument (using current Pd/libpd).
+# Only Linux for now. Other platforms ignore this variable.
+#
+set_var INCLUDE_PD2DEV 0
 
 
 
@@ -352,9 +362,9 @@ fi
 if uname -s |grep Darwin ; then
     
     if ! is_0 $FAUST_USES_LLVM ; then
-	export MACOS_LLVM_TARGET=`${LLVM_CONFIG_BIN} --host-target`
+		export MACOS_LLVM_TARGET=`${LLVM_CONFIG_BIN} --host-target`
     else
-	export MACOS_LLVM_TARGET="Thiscodeisnotsupposedtobecompiled"
+		export MACOS_LLVM_TARGET="Thiscodeisnotsupposedtobecompiled"
     fi
     
 fi
@@ -367,6 +377,10 @@ fi
 #
 ########################################################
 
+if ! uname -s |grep Darwin > /dev/null ; then
+    unset MACOSX_DEPLOYMENT_TARGET
+fi
+
 if [[ $RADIUM_USE_CLANG == 1 ]] ; then
     export FULL_CCC_PATH=`which clang++`
 else
@@ -376,6 +390,10 @@ fi
 if ! uname -s |grep -i Linux > /dev/null ; then
     unset INCLUDE_PDDEV
     set_var INCLUDE_PDDEV 0
+fi
+if ! uname -s |grep -i -e Linux -e Darwin > /dev/null ; then
+    unset INCLUDE_PD2DEV
+    set_var INCLUDE_PD2DEV 0
 fi
 if arch |grep -e arm -e aarch64 ; then
     unset INCLUDE_PDDEV

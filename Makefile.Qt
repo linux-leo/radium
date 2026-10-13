@@ -2,7 +2,7 @@
 # Users and packagers: Edit build_*.sh instead.
 #
 
-RADIUM_VERSION = 8.1.49
+RADIUM_VERSION = 8.1.54
 
 
 SHELL := /usr/bin/env bash
@@ -604,7 +604,7 @@ ifeq ($(BUILD_OPTIMIZED), YES)
 	CPUOPT += -O3
 endif
 
-ifeq ($(BUILD_OPTIMIZED), RELEASE)
+ifeq ($(BUILD_OPTIMIZED), YES)
 	OPTIMIZE_O3=-O3 # SmoothDelay.hpp / Fade.hpp / Granulator.hpp runs faster with -O3.
 else
 	OPTIMIZE_O3=
@@ -708,7 +708,7 @@ QTLINKFLAGS = $(QT_LDFLAGS)
 
 #-------------------OBJECT DEFINITIONS-------------------------------
 
-OBJ1= $(T)windows.o $(T)window_config.o $(T)list.o $(T)vector.o $(T)hashmap.o $(T)Dynvec.o $(T)TimeData.o $(T)song.o $(T)blocks.o $(T)block_insert.o $(T)block_split.o $(T)block_delete.o $(T)block_properties.o $(T)tracks.o $(T)localzooms.o $(T)control.o $(T)lines.o $(T)font.o $(T)track_insert.o $(T)track_onoff.o $(T)settings.o $(T)mmd2load.o $(T)RT_memory_allocator.o
+OBJ1= $(T)windows.o $(T)window_config.o $(T)list.o $(T)vector.o $(T)hashmap.o $(T)Dynvec.o $(T)TimeData.o $(T)song.o $(T)blocks.o $(T)block_insert.o $(T)block_split.o $(T)block_delete.o $(T)block_properties.o $(T)tracks.o $(T)localzooms.o $(T)control.o $(T)lines.o $(T)font.o $(T)track_insert.o $(T)track_onoff.o $(T)settings.o $(T)mmd2load.o $(T)RT_memory_allocator.o $(T)FuzzySearch.o
 
 OBJ2= $(T)notes.o $(T)notes_legalize.o $(T)pitches.o $(T)wblocks.o $(T)wtracks.o $(T)sliders.o $(T)common.o
 
@@ -764,7 +764,12 @@ OBJ14=$(T)disk_midi_fx.o $(T)disk_midi_instrument.o $(T)midi_fx.o $(T)midi_instr
 OBJ_FAUST=$(T)zita_rev.o $(T)stk_flute.o $(T)stk_bowed.o $(T)stk_blow_bottle.o $(T)stk_bass.o $(T)stk_blow_hole.o $(T)stk_brass.o $(T)stk_clarinet.o $(T)stk_flute_stk.o $(T)stk_glass_harmonica.o $(T)stk_harpsi.o $(T)stk_modal_bar.o $(T)stk_NLF_eks.o $(T)stk_NLF_fm.o $(T)stk_piano.o $(T)stk_saxophony.o $(T)stk_sitar.o $(T)stk_tibetan_bowl.o $(T)stk_tuned_bar.o $(T)stk_uni_bar.o $(T)stk_voice_form.o $(T)faust_tapiir.o $(T)faust_system_eq.o $(T)faust_system_tremolo.o $(T)faust_system_lowpass.o $(T)faust_system_highpass.o $(T)faust_system_lowshelf.o $(T)faust_system_highshelf.o $(T)faust_multibandcomp.o
 
 #AUDIO
-OBJ_AUDIO=$(T)audio_instrument.o $(T)SoundProducer.o $(T)AudioBuffer.o $(T)Jack_plugin.o $(T)find_jack_library.o $(T)Faust_plugins.o $(T)Faust_dev2.o $(T)Faust2_compile.o $(T)Faust2_llm_lint.o $(T)Bus_plugins.o $(T)Timeskew_plugin.o $(T)Patchbay_plugin.o $(T)MidiMessages_plugin.o $(T)VST_plugins.o $(T)Ladspa_plugins.o $(T)Sampler_plugin.o $(T)SampleRecorder.o $(T)SampleReader.o $(T)Seqtrack_plugin.o $(T)FluidSynth_plugin.o $(T)Pd_plugin.o $(T)Modulator_plugin.o $(T)SendReceive_plugins.o $(T)SoundPluginRegistry.o $(T)SoundPlugin.o $(T)AudioMeterPeaks.o $(T)Peaks.o $(T)Fade.o $(T)Mixer.o $(T)get_windows_commandlines.o $(T)Envelope.o $(T)Resampler.o $(T)SoundFonts.o $(T)Presets.o $(T)undo_audio_effect.o $(T)undo_connection_enabled.o $(T)undo_audio_connection_gain.o $(T)undo_pd_controllers.o $(T)undo_plugin_state.o $(T)SoundfileSaver.o $(T)system_compressor_wrapper.o $(T)KillJackd.o $(T)SF.o $(T)RIFF.o
+OBJ_AUDIO=$(T)audio_instrument.o $(T)SoundProducer.o $(T)AudioBuffer.o $(T)Jack_plugin.o $(T)find_jack_library.o $(T)Faust_plugins.o $(T)Faust_dev2.o $(T)Faust2_compile.o $(T)Faust2_llm_lint.o $(T)Bus_plugins.o $(T)Timeskew_plugin.o $(T)Patchbay_plugin.o $(T)MidiMessages_plugin.o $(T)VST_plugins.o $(T)Ladspa_plugins.o $(T)Sampler_plugin.o $(T)SampleRecorder.o $(T)SampleReader.o $(T)Seqtrack_plugin.o $(T)FluidSynth_plugin.o $(T)Pd_plugin.o $(T)Pd_plugin2.o $(T)Pd_plugin_common.o $(T)Modulator_plugin.o $(T)SendReceive_plugins.o $(T)SoundPluginRegistry.o $(T)SoundPlugin.o $(T)AudioMeterPeaks.o $(T)Peaks.o $(T)Fade.o $(T)Mixer.o $(T)get_windows_commandlines.o $(T)Envelope.o $(T)Resampler.o $(T)SoundFonts.o $(T)Presets.o $(T)undo_audio_effect.o $(T)undo_connection_enabled.o $(T)undo_audio_connection_gain.o $(T)undo_pd_controllers.o $(T)undo_plugin_state.o $(T)SoundfileSaver.o $(T)system_compressor_wrapper.o $(T)KillJackd.o $(T)SF.o $(T)RIFF.o
+
+# The Pd2 instrument links the libpds wrapper directly into the Radium binary.
+ifneq (,$(findstring -DWITH_PD2,$(OS_OPTS)))
+OBJ_AUDIO+=$(T)libpds.o
+endif
 #$(T)XI_Plugin.o 
 #MultiCore.o $(T)Smooth.o
 
@@ -822,9 +827,9 @@ endif
 # Note: Precompiled headers can not be used when building universal binaries
 # since clang does not support multiple -arch options when generating PCH files.
 ifneq ($(strip $(UNIVERSAL)),)
-$(QT_PCH) Qt/Qt_precompiled.hpp.d &: ;
+$(QT_PCH): ;
 else
-$(QT_PCH) Qt/Qt_precompiled.hpp.d &: Qt/Qt_precompiled.hpp $(BUILD_DEPENDENCIES)
+$(QT_PCH): Qt/Qt_precompiled.hpp $(BUILD_DEPENDENCIES)
 	$(CCC) -MMD -MP -DNO_PRAGMA_ONCE -x c++-header $(QTOPT) -o $(QT_PCH) -c $<
 endif
 
@@ -942,7 +947,7 @@ profile:
 #	operf $(RADIUM_BIN) && opreport -ca |more
 
 check: test
-test: test_vector test_placement test_notes test_path_resolver test_seqautomation test_audiobuffer test_smoothdelay test_threading test_samplereader test_ratio test_refcounttimedata test_rt_memory_allocator test_radium_vector test_timedata test_bdw_gc
+test: test_vector test_placement test_notes test_path_resolver test_seqautomation test_audiobuffer test_smoothdelay test_threading test_samplereader test_ratio test_refcounttimedata test_rt_memory_allocator test_radium_vector test_fuzzysearch test_timedata test_bdw_gc
 	@echo
 	@echo " == All tests succeeded, apparently =="
 
@@ -966,7 +971,7 @@ test_refcounttimedata:
 
 test_timedata:
 	$(CCC) common/TimeData.cpp $(TEST_TIMEDATA_OPTS) -o a.out &&	$(TEST_TIMEDATA_RUNNER)
-	cd common && $(CCC) TimeData.cpp $(TEST_TIMEDATA_OPTS) -DTEST_SHARED_PTR=1 -Ofast -o a.out &&	$(TEST_TIMEDATA_RUNNER)
+	cd common && $(CCC) TimeData.cpp $(TEST_TIMEDATA_OPTS) -DTEST_SHARED_PTR=1 -O3 -ffast-math -o a.out &&	$(TEST_TIMEDATA_RUNNER)
 	cd common && $(CCC) TimeData.cpp $(TEST_TIMEDATA_OPTS) -Os -o a.out &&	$(TEST_TIMEDATA_RUNNER)
 	cd common && $(CCC) TimeData.cpp $(TEST_TIMEDATA_OPTS) -DTEST_SHARED_PTR=1 -O3 -o a.out &&	$(TEST_TIMEDATA_RUNNER)
 
@@ -1018,6 +1023,12 @@ test_radium_vector:
 	cd test && $(CCC) -Wall $(WERROR) test_radium_vector.cpp -DTEST_RADIUM_VECTOR_MAIN -Wall $(STD_CPP) -g -D__STDC_FORMAT_MACROS=1 $(ADDRESS_SANITIZE_OPTS) $(UNDEFINED_SANITIZE_OPTS) $(TEST_DEFS) -I../Qt -Wno-unused-function -O3 -o test_radium_vector
 	ASAN_OPTIONS="detect_leaks=0,abort_on_error=1" UBSAN_OPTIONS="print_stacktrace=1:abort_on_error=1" gdb -ex='set confirm on' -ex=run -ex=quit test/test_radium_vector
 	ASAN_OPTIONS="detect_leaks=0,abort_on_error=1" UBSAN_OPTIONS="print_stacktrace=1:abort_on_error=1" test/test_radium_vector
+
+test_fuzzysearch:
+	$(CCC) -Wall $(WERROR) -fPIC $(filter-out -c, $(QTOPT)) -g $(ADDRESS_SANITIZE_OPTS) $(UNDEFINED_SANITIZE_OPTS) $(TEST_DEFS) -o test/test_fuzzysearch_bin test/test_fuzzysearch.cpp common/FuzzySearch.cpp $(QT_LDFLAGS)
+	ASAN_OPTIONS="detect_leaks=0,abort_on_error=1" UBSAN_OPTIONS="print_stacktrace=1:abort_on_error=1" test/test_fuzzysearch_bin
+	@echo "=== success: test_fuzzysearch ==="
+	@rm test/test_fuzzysearch_bin
 
 test_samplereader:
 	cd audio && $(CCC) SampleReader.cpp -DTEST_MAIN -Wall $(STD_CPP) -g && ./a.out
@@ -1094,14 +1105,30 @@ benchmark_smoothdelay:
 	@printf "\033[0;36m!!!! First: ./build_clean.sh && BUILDTYPE=RELEASE ./build_linux.sh + ctrl-c.\n"
 	@printf "!!!! To benchmark using clang: CC=clang CCC=clang++ make benchmark_smoothdelay.\033[0m\n"
 	@echo
-	$(CCC) -g -Wall $(WERROR) test/test_smoothdelay.cpp $(CPPOPT) -UNDEBUG -fPIC $(TEST_DEFS) -DBENCHMARK_SMOOTHDELAY -O3 $(SMOOTHDELAY_OPTS) -ffast-math -ffast-math #-fopt-info-vec-optimized -fopt-info-vec-all
-	$(CCC) -g -Wall $(WERROR) audio/Fade.cpp $(CPPOPT) -UNDEBUG -fPIC $(TEST_DEFS) -DBENCHMARK_SMOOTHDELAY -O3  $(SMOOTHDELAY_OPTS) -DMARCH_NATIVE_ALLOWED=1 -march=native -ffast-math #-fopt-info-vec-optimized -fopt-info-vec-all
+	$(CCC) -g -Wall $(WERROR) test/test_smoothdelay.cpp $(CPPOPT) -UNDEBUG -fPIC $(TEST_DEFS) -DBENCHMARK_SMOOTHDELAY -O3 $(SMOOTHDELAY_OPTS) -ffast-math -ffast-math -fomit-frame-pointer #-fopt-info-vec-optimized -fopt-info-vec-all
+	$(CCC) -g -Wall $(WERROR) audio/Fade.cpp $(CPPOPT) -UNDEBUG -fPIC $(TEST_DEFS) -DBENCHMARK_SMOOTHDELAY -O3  $(SMOOTHDELAY_OPTS) -DMARCH_NATIVE_ALLOWED=1 -march=native -ffast-math -fomit-frame-pointer #-fopt-info-vec-optimized -fopt-info-vec-all
 #-march=native
 
 #-fno-signed-zeros 
 	$(CCC) test_smoothdelay.o Fade.o $(OS_LDFLAGS2)  -o test_smoothdelay
 	./test_smoothdelay
 	@rm test_smoothdelay
+
+FAUST_BENCH_LIB_DIR ?= bin/packages/faust/build/lib
+FAUST_BENCH_LD_LIBRARY_PATH ?=
+FAUST_BENCH_ARGS ?=
+FAUST_BENCH_HAVE_LLVM = $(shell nm -D $(FAUST_BENCH_LIB_DIR)/libfaust.so 2>/dev/null | grep -c 'createDSPFactoryFromString')
+FAUST_BENCH_LLVM_DEF = $(if $(filter 0,$(FAUST_BENCH_HAVE_LLVM)),-DWITHOUT_LLVM_IN_FAUST_DEV,)
+
+bench_faust_iterator bench_faust_sample_rate:
+	@echo
+	@printf "\033[0;36mCompares runtime vs compile-time sample rate for FaustDev programs, LLVM JIT vs interpreter.\033[0m\n"
+	@printf "\033[0;36mUse FAUST_BENCH_LIB_DIR=<dir> to link another libfaust (e.g. an LLVM-enabled build).\033[0m\n"
+	@printf "\033[0;36mUse FAUST_BENCH_ARGS='--backend interp --mode runtime' to limit the run.\033[0m\n"
+	@echo
+	$(CCC) -g -Wall $(WERROR) $(STD_CPP) -O3 $(FAUST_BENCH_LLVM_DEF) -I bin/packages/faust/architecture test/test_faust_sample_rate.cpp -L$(FAUST_BENCH_LIB_DIR) -Wl,-rpath,$(abspath $(FAUST_BENCH_LIB_DIR)) -lfaust -lpthread -o test/test_faust_sample_rate_bin
+	LD_LIBRARY_PATH=$(FAUST_BENCH_LD_LIBRARY_PATH) test/test_faust_sample_rate_bin $(FAUST_BENCH_ARGS)
+	@rm -f test/test_faust_sample_rate_bin
 
 packages: bin/packages/deletemetorebuild
 
@@ -1270,6 +1297,9 @@ $(T)sliders.o:  $(BUILD_DEPENDENCIES) $(CD)sliders.c
 
 $(T)common.o:  $(BUILD_DEPENDENCIES) $(CD)common.c 
 	$(CC2) $(CD)common.c $(OPT)
+
+$(T)FuzzySearch.o:  $(BUILD_DEPENDENCIES) $(CD)FuzzySearch.cpp $(CD)FuzzySearch.h $(QT_PCH)
+	$(CCC2) $(CD)FuzzySearch.cpp $(QTOPT) $(QT_PCH_INCLUDE)
 
 $(T)eventreciever.o:  $(BUILD_DEPENDENCIES) $(CD)eventreciever.c
 	$(CC2) $(CD)eventreciever.c $(OPT)
@@ -2433,6 +2463,15 @@ $(T)FluidSynth_plugin.o: audio/FluidSynth_plugin.cpp
 $(T)Pd_plugin.o: audio/Pd_plugin.cpp #$(QT_PCH)
 	$(CCC2) -Ibin/packages/fluidsynth-2.5.6/include $(QTOPT) `$(PKG) --cflags glib-2.0` audio/Pd_plugin.cpp -Ibin/packages/libpd-master/libpds -Ibin/packages/libpd-master/libpd_wrapper -Ibin/packages/libpd-master/pure-data/src #$(QT_PCH_INCLUDE)
 
+$(T)Pd_plugin2.o: audio/Pd_plugin2.cpp #$(QT_PCH)
+	$(CCC2) -Ibin/packages/fluidsynth-1.1.6/include $(QTOPT) `$(PKG) --cflags glib-2.0` audio/Pd_plugin2.cpp -isystem bin/packages/libpd/libpd_wrapper -isystem bin/packages/libpd/pure-data/src #$(QT_PCH_INCLUDE)
+
+$(T)libpds.o: $(BUILD_DEPENDENCIES) libpds/libpds.c libpds/libpds.h
+	$(CC2) libpds/libpds.c $(OPT) -isystem bin/packages/libpd/libpd_wrapper -isystem bin/packages/libpd/pure-data/src
+
+$(T)Pd_plugin_common.o: audio/Pd_plugin_common.cpp #$(QT_PCH)
+	$(CCC2) $(QTOPT) `$(PKG) --cflags glib-2.0` audio/Pd_plugin_common.cpp #$(QT_PCH_INCLUDE)
+
 
 $(T)Modulator_plugin.o: audio/Modulator_plugin.cpp audio/Delay.hpp $(QT_PCH)
 	$(CCC2) $(QTOPT) $(QT_PCH_INCLUDE) audio/Modulator_plugin.cpp $(NO_SANITIZE_SIGNED_INTEGER_OVERFLOW) $(NO_ANALYZER_MALLOC_LEAK)
@@ -2473,9 +2512,9 @@ endif
 # Note: Precompiled headers can not be used when building universal binaries
 # since clang does not support multiple -arch options when generating PCH files.
 ifneq ($(strip $(UNIVERSAL)),)
-$(FAUST_PCH) audio/Faust_plugins_precompiled.hpp.d &: ;
+$(FAUST_PCH): ;
 else
-$(FAUST_PCH) audio/Faust_plugins_precompiled.hpp.d &: audio/Faust_plugins_precompiled.hpp $(BUILD_DEPENDENCIES)
+$(FAUST_PCH): audio/Faust_plugins_precompiled.hpp $(BUILD_DEPENDENCIES)
 	$(CCC) -MMD -MP -DNO_PRAGMA_ONCE $(FAUST_OPTS2) -o $(FAUST_PCH) -c $<
 endif
 
@@ -2932,7 +2971,7 @@ $(T)GfxElements.o: OpenGL/GfxElements.cpp $(VISUALIZATION_HEADERS) common/Mutex.
 $(T)Render.o: OpenGL/Render.cpp $(VISUALIZATION_HEADERS) common/spinlock.h common/time_proc.h common/Beats_proc.h common/TimeData.hpp $(QT_PCH)
 	$(CCC2) OpenGL/Render.cpp $(QTOPT) $(QT_PCH_INCLUDE) $(VISUALIZATION_OPTIONS)
 
-$(T)Widget.o: OpenGL/Widget.cpp $(VISUALIZATION_HEADERS) OpenGL/TextureAtlas.hpp common/Mutex.hpp common/spinlock.h common/MovingAverage.hpp common/Vector.hpp Qt/Timer.hpp # OpenGL/Qt6ThreadedWidget.hpp $(QT_PCH)
+$(T)Widget.o: OpenGL/Widget.cpp $(VISUALIZATION_HEADERS) OpenGL/TextureAtlas.hpp common/Mutex.hpp common/spinlock.h common/MovingAverage.hpp common/Vector.hpp Qt/Timer.hpp $(QT_PCH) # OpenGL/Qt6ThreadedWidget.hpp
 	$(CCC2) OpenGL/Widget.cpp $(QTOPT) $(QT_PCH_INCLUDE) $(VISUALIZATION_OPTIONS) 
 
 $(T)RhiWindow.o: OpenGL/RhiWindow.cpp $(VISUALIZATION_HEADERS) $(QT_PCH)

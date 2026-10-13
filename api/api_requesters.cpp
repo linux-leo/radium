@@ -47,6 +47,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. */
 
 #include "api_requesters_proc.h"
 
+#include "../Qt/Qt_PopupMenu_proc.h"
+
 #include "api_common_proc.h"
 
 extern struct Root *root;
@@ -54,10 +56,6 @@ extern struct Root *root;
 
 void setDefaultColors1(void){
   GFX_SetDefaultColors1(getWindowFromNum(-1));
-}
-
-void setDefaultColors2(void){
-  GFX_SetDefaultColors2(getWindowFromNum(-1));
 }
 
 void configSystemFont(void){
@@ -328,6 +326,11 @@ int64_t popupMenu(dynvec_t strings, func_t* callback){
   return GFX_Menu2(window, NULL, "", vec, callback, true, true);
 }
 
+void openMainMenuPopup(void)
+{
+	GFX_open_hamburger_popup_menu(NULL);
+}
+
 static radium::ProtectedS7FuncVector g_popupmenu_closed_callbacks(true);
 
 void addPopupMenuClosedCallback(func_t* callback){
@@ -367,6 +370,11 @@ void API_call_me_when_a_popup_menu_has_been_closed(void){
 
 int64_t getLastHoveredPopupMenuEntry(void){
   return g_last_hovered_menu_entry_guinum;
+}
+
+bool isCurrentPopupMenuEntry(int64_t guinum)
+{
+  return GFX_IsCurrentMenuEntry(guinum);
 }
 
 void hoverPopupMenuEntry(int entryid){

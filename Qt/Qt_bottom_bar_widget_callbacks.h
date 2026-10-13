@@ -30,6 +30,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. */
 #include "../Qt/Qt_MyQButton.h"
 #include "../Qt/Qt_MyQSpinBox.h"
 #include <QTimer>
+#include <QToolTip>
 
 #ifdef USE_QT5
 #include <QStyleFactory>
@@ -46,6 +47,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. */
 #include "Qt_bottom_bar_widget.h"
 
 #include "Qt_bottom_bar_widget_proc.h"
+
+#include "Qt_PopupMenu_proc.h"
 
 
 
@@ -113,9 +116,6 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
     }
 
     this->system_volume_slider->_patch.set(g_system_out_patch);
-    
-    if (this->system_volume_slider->_patch.data() != NULL)
-      this->system_volume_slider->calledRegularlyByParent();
     
     //SLIDERPAINTER_call_regularly(this->system_volume_slider->_painter);
   }
@@ -312,6 +312,8 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
   }
 
   QWidget *_navigator_widget = NULL;
+
+  MyQButton *_hamburger_button = NULL;
       
   void remove_editor_elements(void){
 
@@ -581,6 +583,14 @@ extern "C"{
       
   }
 
+  void GFX_OS_call_very_often(void){
+    for(auto *bottom_bar_widget : g_bottom_bars){
+      auto *system_volume_slider = bottom_bar_widget->system_volume_slider;
+      if (system_volume_slider->_patch.data() != NULL)
+        system_volume_slider->calledRegularlyByParent();
+    }
+  }
+
   void GFX_OS_UpdateKeyOctave(void){
     if(g_is_starting_up==false)
       for(auto *bottom_bar_widget : g_bottom_bars)
@@ -644,6 +654,16 @@ struct SoundPlugin *RT_get_system_out_plugin(void){
   return g_system_out_plugin;
 }
 
+// Called when the hamburger popup menu (the main menus) has been opened.
+// Stops the attention drawing of the hamburger buttons.
+void GFX_OS_hamburger_menu_was_opened(void){
+  QToolTip::hideText();
+
+  for(auto *bottom_bar_widget : g_bottom_bars)
+    if (bottom_bar_widget->_hamburger_button != NULL)
+      bottom_bar_widget->_hamburger_button->set_attention(false);
+}
+
 bool EDITOR_switch_drunk_velocity(void){
   drunk_velocity = !drunk_velocity;
   
@@ -662,6 +682,25 @@ QWidget *BottomBar_create(QWidget *parent, bool include_editor_elements, bool in
   auto *ret = new Bottom_bar_widget(parent, include_navigator);
   if(!include_editor_elements)
     ret->remove_editor_elements();
+
+  {
+    // Hamburger button opening a popup menu with the main menus. (See FROM_C-popup-main-menus)
+    auto *hamburger_button = new MyQButton("☰", ret);
+    hamburger_button->setObjectName("hamburger_button");
+    hamburger_button->setToolTip("Main menus");
+    hamburger_button->_statusbar_text = "Open main menu. Press left alt to open";
+    hamburger_button->setFocusPolicy(Qt::NoFocus);
+    hamburger_button->setMinimumWidth(QApplication::fontMetrics().height()); // Make it roughly square.
+    QObject::connect(hamburger_button, &MyQButton::clicked, [hamburger_button](){
+      GFX_open_hamburger_popup_menu(hamburger_button);
+    });
+    hamburger_button->_show_popup_menu = [](){
+      S7CALL2(void_void, "FROM_C-show-hamburger-keybinding-popup");
+    };
+    ret->horizontalLayout_2->insertWidget(0, hamburger_button);
+    ret->horizontalLayout_2->insertSpacing(1, 2 * g_gfx_scale); // Some space between the hamburger and the status line.
+    ret->_hamburger_button = hamburger_button;
+  }
   
   {
     const QFontMetrics fn = QFontMetrics(QApplication::font());

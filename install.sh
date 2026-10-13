@@ -3,7 +3,12 @@
 set -eEu
 #set -x
 
+
 THIS_DIR="$(dirname "$(readlink -f "$0")")"
+
+pushd $THIS_DIR
+source configuration.sh
+popd
 
 
 PREFIX=$1
@@ -33,6 +38,8 @@ echo $TARGET
 mkdir -p "$TARGET"
 
 cd "$THIS_DIR/bin"
+
+touch all_my_passwords.txt
 
 can_copy() {
     if [[ "$1" = *"packages"* ]]; then
@@ -70,16 +77,28 @@ can_copy() {
     fi
 }
 
-GENERATED_FILES="radium|radium_linux.bin|radium.bin.exe|radium_check_jack_status|radium_check_jack_status.exe|radium_check_recent_libxcb|radium_crashreporter|radium_crashreporter.exe|radium_error_message|radium_error_message.exe|radium_plugin_scanner|radium_plugin_scanner.exe|radium_progress_window|radium_progress_window.exe|radium_show_message|keybindingsparser.pyc|keysubids.pyc|protoconfparser.pyc|color.frag.qsb|color.vert.qsb|texture_fragment.qsb|texture_vertex.qsb|llvm_math.ll|protos.conf"
+# I.e. included
+GENERATED_FILES="radium|radium_linux.bin|radium.bin.exe|radium_check_jack_status|radium_check_jack_status.exe|radium_check_recent_libxcb|radium_crashreporter|radium_crashreporter.exe|radium_error_message|radium_error_message.exe|radium_plugin_scanner|radium_plugin_scanner.exe|radium_progress_window|radium_progress_window.exe|radium_show_message|keybindingsparser.pyc|keysubids.pyc|protoconfparser.pyc|color.frag.qsb|color.vert.qsb|texture_fragment.qsb|texture_vertex.qsb|llvm_math.ll|protos.conf|pd/externals/*|sounds/8067__annannienann__low-d-arh.wav.radium_peaks|sounds/711620__joshstovall__cymbal-roll.wav.radium_peaks|scheme/api_protos.scm"
 
-in_allowlist() {
-    local f
-    for f in ${GENERATED_FILES//|/ } ; do
-        if [[ "$1" = "$f" ]]; then
+# I.e. NOT included
+IGNORED_FILES="s7webserver/moc_s7webserver.cpp|*.rej|*.orig|ladspa_macos|*.radium_peaks"
+
+matches_pattern() {
+    local item="$1" pattern
+    while IFS= read -r pattern; do
+        if [[ "$item" = $pattern ]]; then
             return 0
         fi
-    done
+    done < <(printf '%s\n' "${2//|/$'\n'}")
     return 1
+}
+
+in_allowlist() {
+    matches_pattern "$1" "$GENERATED_FILES"
+}
+
+in_ignored_files() {
+    matches_pattern "$1" "$IGNORED_FILES"
 }
 
 # Copy files which are in the git repository.
@@ -104,13 +123,14 @@ rm -f "$TMP_FILELIST"
 # Copy known generated files.
 for a in ${GENERATED_FILES//|/ } ; do
     if test -e "$a"; then
-        cp -a "$a" "$TARGET/"
+        mkdir -p "$TARGET/$(dirname "$a")"
+        cp -a "$a" "$TARGET/$a"
     fi
 done
 
-if test -f /tmp/radium_bin/radium_linux.bin; then
+if test -f "$RADIUM_TMP_BIN_DIR/radium_linux.bin"; then
     rm -f "$TARGET/radium_linux.bin"
-    cp -f /tmp/radium_bin/radium_linux.bin "$TARGET/"
+    cp -f "$RADIUM_TMP_BIN_DIR/radium_linux.bin" "$TARGET/"
 fi
 
 mkdir -p "$TARGET/packages"
@@ -147,12 +167,44 @@ rm -fr "$TARGET/python-midi/src/sequencer_osx"
 
 
 
-# pure data
-cp -a packages/libpd-master "$TARGET/packages/"
-cd "$TARGET/packages/libpd-master"
-make clean
-rm -f libpds.o
-cd "$THIS_DIR/bin"
+# Pd1
+if [ ${INCLUDE_PDDEV} -eq 1 ] ; then
+	cp -a packages/libpd-master "$TARGET/packages/"
+	cd "$TARGET/packages/libpd-master"
+	make clean
+	rm -f libpds.o
+	cd "$THIS_DIR/bin"
+fi
+
+
+# Pd2
+if [ ${INCLUDE_PD2DEV} -eq 1 ] ; then
+	mkdir -p "$TARGET/packages/libpd/pure-data"
+	cp -a packages/libpd/pure-data/tcl "$TARGET/packages/libpd/pure-data/"
+	cp -a packages/libpd/pure-data/extra "$TARGET/packages/libpd/pure-data/"
+	cp -a packages/libpd/pure-data/po "$TARGET/packages/libpd/pure-data/"
+	cp -a packages/libpd/pure-data/doc "$TARGET/packages/libpd/pure-data/"
+	
+	# The dynamically loaded Pd externals (OSC and networking objects) are built
+	# by bin/packages/build.sh into bin/pd/externals.
+	mkdir -p "$TARGET/pd"
+	cp -a pd/externals "$TARGET/pd/"
+	
+	mkdir -p "$TARGET/packages/libpd/libs"
+	if uname -s |grep Darwin ; then
+		cp -a packages/libpd/libs/libpd.dylib "$TARGET/packages/libpd/libs/"
+
+		# The self-contained Tcl/Tk Wish.app used to show the Pd GUI.
+		# Built by bin/packages/build.sh (build_tcltk_wish).
+		if [ -d packages/libpd/Wish.app ] ; then
+			cp -a packages/libpd/Wish.app "$TARGET/packages/libpd/"
+		else
+			echo "Warning: packages/libpd/Wish.app has not been built. The Pd2 GUI will require Tcl/Tk (wish) to be installed on the machine." >&2
+		fi
+	else
+		cp -a packages/libpd/libs/libpd.so "$TARGET/packages/libpd/libs/"
+	fi
+fi
 
 echo "A1"
 # ladspa
@@ -208,20 +260,44 @@ while IFS= read -r -d '' a; do
     a="${a#./}"
     top="${a%%/*}"
     if [[ "$top" = scheme ]] || can_copy "$top"; then
-        if ! in_allowlist "$a" && ! git ls-files --error-unmatch "$a" >/dev/null 2>&1; then
+        if ! in_allowlist "$a" && ! in_ignored_files "$a" && ! git ls-files --error-unmatch "$a" >/dev/null 2>&1; then
             excluded_files+="$a"$'\n'
         fi
     fi
 done < <(find . -path ./packages -prune -o \( -type f -o -type l \) -print0)
 
-if [[ -n "$excluded_files" ]]; then
-    while [[ "$excluded_files" == *$'\n' ]]; do
-        excluded_files="${excluded_files%$'\n'}"
-    done
-    echo "Files not included because they are not in the whitelist (git repository + known generated files):"
+while [[ "$excluded_files" == *$'\n' ]]; do
+    excluded_files="${excluded_files%$'\n'}"
+done
+
+warned_about_passwords=0
+unexpected_files=""
+while IFS= read -r line; do
+    if [[ "$line" = all_my_passwords.txt ]]; then
+        warned_about_passwords=1
+    elif [[ -n "$line" ]]; then
+        unexpected_files+="$line"$'\n'
+    fi
+done <<< "$excluded_files"
+
+while [[ "$unexpected_files" == *$'\n' ]]; do
+    unexpected_files="${unexpected_files%$'\n'}"
+done
+
+if [[ -n "$unexpected_files" ]]; then
+    echo "Files not included because they are not in the whitelist (git repository + known generated files). To fix, either add to git (to include), add to GENERATED_FILES (to include), or add to IGNORED_FILES (to exclude, i.e. just silence the warning):"
     RED="$(tput setaf 1 2>/dev/null || printf '\033[31m')"
     RESET="$(tput sgr0 2>/dev/null || printf '\033[0m')"
     while IFS= read -r line; do
         printf '%s%s%s\n' "$RED" "$line" "$RESET"
-    done <<< "$excluded_files"
+    done <<< "$unexpected_files"
+fi
+
+if [[ $warned_about_passwords -eq 0 ]]; then
+    echo "Error: bin/all_my_passwords.txt was not listed as not included. Something's not right. Refusing to continue." >&2
+    exit -1
+fi
+
+if [[ -n "$unexpected_files" ]]; then
+    exit -1
 fi

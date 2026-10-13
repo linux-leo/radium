@@ -527,6 +527,8 @@ void setTrackSliderPos(float pos, int blocknum, int windownum){
   if (wblock->skew_x < -(total_width-visible_width))
     wblock->skew_x = -(total_width-visible_width);
 
+  const int new_skew_x = wblock->skew_x;
+
   UpdateAllWTracksCoordinates(window,wblock);
 
   // Scroll right
@@ -573,6 +575,16 @@ void setTrackSliderPos(float pos, int blocknum, int windownum){
 
     if (track==window->curr_track && subtrack==window->curr_track_sub)
       break;
+  }
+
+  // cursorRight/cursorLeft -> setCurrentTrack -> GFX_adjust_skew_x ->
+  // make_cursor_visible may have changed skew_x to keep the cursor visible.
+  // The scrollbar position must take precedence, otherwise the editor is
+  // briefly drawn at the wrong scroll position until the next mouse move.
+  if (wblock->skew_x != new_skew_x)
+  {
+    wblock->skew_x = new_skew_x;
+    UpdateAllWTracksCoordinates(window, wblock);
   }
 
   window->must_redraw=true;
@@ -1708,7 +1720,7 @@ void setPianonoteLogtype(int logtype, int pianonotenum, dyn_t dynnote, int track
 
   struct Tracks *track = wtrack->track;
 
-  window->must_redraw_editor=true;
+  window->must_redraw_editor = true;
 
   int pitchnum = getPitchNumFromPianonoteNum(pianonotenum, dynnote, tracknum, blocknum, windownum);
   //printf("pitchnum: %d. pianonotenum: %d. wtrack: %d. wblock: %d\n", pitchnum, pianonotenum, wtrack->l.num, wblock->l.num);
@@ -1753,7 +1765,7 @@ dyn_t movePianonoteEnd(int pianonotenum, float value, Place place_arg, dyn_t dyn
   } else {
   
   
-    window->must_redraw_editor=true;
+    window->must_redraw_editor = true;
 
     if (value > 0){
       if(note->pitch_end > 0 || reader.size() > 0) //note->pitches!=NULL)
@@ -1870,7 +1882,7 @@ void deletePianonote(int pianonotenum, dyn_t dynnote, int tracknum, int blocknum
     return;
 
   if (pianonotenum==0) {
-    window->must_redraw_editor=true;
+    window->must_redraw_editor = true;
 
     {
       SCOPED_PLAYER_LOCK_IF_PLAYING();

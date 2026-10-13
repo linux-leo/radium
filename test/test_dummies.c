@@ -32,9 +32,112 @@ static double get_ms(void){
   return (double)now.tv_sec*1000.0 + (double)now.tv_usec/1000.0;
 }
 
+#if BENCHMARK_SMOOTHDELAY && (defined(__i386__) || defined(__x86_64__)) && (defined(__GNUC__) || defined(__clang__))
+// The benchmark does ~20 million time measurements, and the gettimeofday overhead
+// is significant compared to the code being measured. Use the cycle counter instead.
+// (On x86 with invariant TSC, which is required to be synchronized between all cores.)
+#include <stdint.h>
+#include <time.h>
+#include <cpuid.h>
+
+static double g_benchmark_tsc_per_ms = 0.0;
+
+static inline uint64_t benchmark_rdtsc(void){
+  uint32_t lo, hi;
+  __asm__ __volatile__("lfence\n\trdtsc" : "=a"(lo), "=d"(hi) :: "memory");
+  return ((uint64_t)hi << 32) | (uint64_t)lo;
+}
+
+static bool benchmark_has_invariant_tsc(void){
+  unsigned int eax, ebx, ecx, edx;
+
+  if (!__get_cpuid(0x80000007, &eax, &ebx, &ecx, &edx))
+    return false;
+
+  return (edx & (1u << 8)) != 0; // EDX bit 8: Invariant TSC.
+}
+
+static void __attribute__((constructor)) benchmark_init_tsc_timer(void){
+  if (!benchmark_has_invariant_tsc())
+    return;
+
+  // Calibrate the TSC frequency. get_ms() is used instead of clock_gettime to
+  // avoid a direct dependency on -lrt, and since it's only called once here.
+  const double start_ms = get_ms();
+  const uint64_t start_tsc = benchmark_rdtsc();
+
+  usleep(20*1000);
+
+  const uint64_t end_tsc = benchmark_rdtsc();
+  const double end_ms = get_ms();
+
+  const double duration_ms = end_ms - start_ms;
+  if (duration_ms > 0.0){
+    g_benchmark_tsc_per_ms = (double)(end_tsc - start_tsc) / duration_ms;
+  }
+}
+
+double TIME_get_ms(void){
+  if (g_benchmark_tsc_per_ms > 0.0)
+    return (double)benchmark_rdtsc() / g_benchmark_tsc_per_ms;
+
+  return get_ms();
+}
+
+#elif BENCHMARK_SMOOTHDELAY && defined(__aarch64__) && defined(__APPLE__)
+// Same rationale as for x86 above: the benchmark does ~20 million time
+// measurements, and the gettimeofday overhead is significant compared to the
+// code being measured. Read the architectural virtual counter (CNTVCT_EL0)
+// directly instead, and calibrate its frequency using mach_absolute_time,
+// which has a known timebase (24 MHz on Apple Silicon).
+#include <stdint.h>
+#include <mach/mach_time.h>
+
+static double g_benchmark_cntvct_per_ms = 0.0;
+
+static inline uint64_t benchmark_rdcntvct(void){
+  uint64_t v;
+  __asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(v) :: "memory");
+  return v;
+}
+
+static void __attribute__((constructor)) benchmark_init_cntvct_timer(void){
+  mach_timebase_info_data_t timebase;
+
+  if (mach_timebase_info(&timebase) != KERN_SUCCESS)
+    return;
+
+  if (timebase.numer == 0)
+    return;
+
+  const uint64_t start_mach = mach_absolute_time();
+  const uint64_t start_cntvct = benchmark_rdcntvct();
+
+  usleep(20*1000);
+
+  const uint64_t end_cntvct = benchmark_rdcntvct();
+  const uint64_t end_mach = mach_absolute_time();
+
+  const double duration_ms = (double)(end_mach - start_mach) * timebase.numer / timebase.denom / 1000000.0;
+
+  if (duration_ms > 0.0)
+    g_benchmark_cntvct_per_ms = (double)(end_cntvct - start_cntvct) / duration_ms;
+}
+
+double TIME_get_ms(void){
+  if (g_benchmark_cntvct_per_ms > 0.0)
+    return (double)benchmark_rdcntvct() / g_benchmark_cntvct_per_ms;
+
+  return get_ms();
+}
+
+#else
+
 double TIME_get_ms(void){
   return get_ms();
 }
+
+#endif
 
 
 void EVENTLOG_add_event(const char *log_entry)

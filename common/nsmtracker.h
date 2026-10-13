@@ -818,6 +818,10 @@ enum ColorNums {
   
   MENU_TEXT_COLOR_NUM,
   MENU_KEYBINDING_TEXT_COLOR_NUM,
+  MENU_BACKGROUND_COLOR_NUM,
+  MENU_ENTRY_BACKGROUND_COLOR_NUM,
+  MENU_CURRENT_ENTRY_COLOR_NUM,
+  MENU_SEARCH_COLOR_NUM,
   KEYBOARD_FOCUS_BORDER_COLOR_NUM,
   ALTERNATIVE_LABEL_COLOR_NUM,
 
@@ -1403,12 +1407,14 @@ static inline bool doubles_are_equal(double x, double y){
 
   if (diff <= eps)
     return(true);
+#if !defined(__clang__) || !__FINITE_MATH_ONLY__
 #ifdef __cplusplus
   if ((std::isnan(x)) || (std::isnan(y)))
     return((std::isnan(x)) && (std::isnan(y)));
 #else
   if ((isnan(x)) || (isnan(y)))
     return((isnan(x)) && (isnan(y)));
+#endif
 #endif
   // I don't understand what's happening below here, but I trust Bill.
   
@@ -4161,6 +4167,8 @@ extern bool g_mouse_is_pressed; // Should work for all widgets. If true, we can 
 
 extern bool g_embed_samples;
 extern bool g_curr_song_contains_embedded_samples;
+extern bool g_embed_seqtrack_samples;
+extern bool g_curr_song_contains_embedded_seqtrack_samples;
 
 static inline struct SeqTrack *SEQUENCER_get_curr_seqtrack(void){
   int curr_seqtracknum = ATOMIC_GET(root->song->curr_seqtracknum);

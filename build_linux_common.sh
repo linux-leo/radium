@@ -10,10 +10,10 @@ echo "B2_"
 source $(dirname "${0}")/configuration.sh
 echo "B3_"
 
-export RADIUM_BIN="/tmp/radium_bin/radium_linux.bin"
+export RADIUM_BIN="$RADIUM_TMP_BIN_DIR/radium_linux.bin"
 
-mkdir -p /tmp/radium_bin
-mkdir -p /tmp/radium_objects
+mkdir -p "$RADIUM_TMP_BIN_DIR"
+mkdir -p "$T"
 
 
 # Uncomment next line for debug build.
@@ -84,9 +84,6 @@ export CPUOPT=
 # export GCC_PREFIX=$(dirname `which gcc`)/../
 # REQUIRES_RTTI=1 cmake -DLLVM_ENABLE_PROJECTS="clang;compiler-rt" -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=$GCC_PREFIX/bin/gcc -DCMAKE_CXX_COMPILER=$GCC_PREFIX/bin/g++ -DGCC_INSTALL_PREFIX=$GCC_PREFIX -DCMAKE_INSTALL_PREFIX=/home/kjetil/site -DLLVM_ENABLE_RTTI=ON ../llvm 
 # REQUIRES_RTTI=1 make REQUIRES_RTTI=1 -j2
-
-branch=$(git branch | sed -n -e 's/^\* \(.*\)/\1/p')
-export T=/tmp/radium_objects_$branch/
 
 
 RADIUM_USES_MOLD_OR_LDD=0
@@ -200,6 +197,10 @@ if ! is_0 $INCLUDE_PDDEV ; then
     export OS_OPTS="$OS_OPTS -DWITH_PD"
 fi
 
+if ! is_0 $INCLUDE_PD2DEV ; then
+    export OS_OPTS="$OS_OPTS -DWITH_PD2"
+fi
+
 #echo "222==QHTAT??"
 #exit -1
 
@@ -242,6 +243,12 @@ else
     PDLDFLAGS=""
 fi
 
+if ! is_0 $INCLUDE_PD2DEV ; then
+    PD2LDFLAGS="-Lbin/packages/libpd/libs -lpd"
+else    
+    PD2LDFLAGS=""
+fi
+
 if ! env |grep RADIUM_BFD_CFLAGS ; then
     export RADIUM_BFD_CFLAGS=""
 fi
@@ -250,12 +257,12 @@ if ! env |grep RADIUM_BFD_LDFLAGS ; then
     if [[ $RADIUM_USE_CLANG == 1 ]] && [ -f "$CLANG_PREFIX/lib/libbfd.a" ]; then
         export RADIUM_BFD_LDFLAGS="$CLANG_PREFIX/lib/libbfd.a"
     else
-	GCC_MAJOR=$(gcc -dumpversion | cut -d'.' -f1)
-	if [ $GCC_MAJOR -gt 13 ] ; then
-	    export RADIUM_BFD_LDFLAGS="-lbfd" # seems like gcc is able to link static version of bfd by itself now...
-	else
-            export RADIUM_BFD_LDFLAGS="-Wl,-Bstatic -lbfd -Wl,-Bdynamic"
-	fi
+		GCC_MAJOR=$(gcc -dumpversion | cut -d'.' -f1)
+		if [ $GCC_MAJOR -gt 13 ] ; then
+			export RADIUM_BFD_LDFLAGS="-lbfd" # seems like gcc is able to link static version of bfd by itself now...
+		else
+			export RADIUM_BFD_LDFLAGS="-Wl,-Bstatic -lbfd -Wl,-Bdynamic"
+		fi
     fi
 fi
 
@@ -263,7 +270,7 @@ export OS_JUCE_LDFLAGS="-lasound -pthread -lrt -lX11 -lXext "
 
 #LIBGIG_LDFLAGS="bin/packages/libgig/src/.libs/RIFF.o bin/packages/libgig/src/.libs/SF.o"
 FLUIDSYNTH_LDFLAGS="bin/packages/fluidsynth-2.5.6/src/libfluidsynth.a `$PKG --libs glib-2.0`"
-export OS_LDFLAGS="$QSCINTILLA_PATH/libqscintilla2_qt6.a $FAUSTLDFLAGS $PDLDFLAGS pluginhost/Builds/Linux/build/libMyPluginHost.a $OS_JUCE_LDFLAGS `$PKG --libs lrdf` $GCDIR/.libs/libgc.a $PYTHONLIBPATH $PYTHONLIBNAME `$PKG --libs sndfile` `$PKG --libs samplerate` `$PKG --libs liblo` -lxcb -lxkbcommon-x11 -lxkbcommon -lzstd $FLUIDSYNTH_LDFLAGS $RADIUM_BFD_LDFLAGS -liberty `$PKG --libs freetype2`"
+export OS_LDFLAGS="$QSCINTILLA_PATH/libqscintilla2_qt6.a $FAUSTLDFLAGS $PDLDFLAGS $PD2LDFLAGS pluginhost/Builds/Linux/build/libMyPluginHost.a $OS_JUCE_LDFLAGS `$PKG --libs lrdf` $GCDIR/.libs/libgc.a $PYTHONLIBPATH $PYTHONLIBNAME `$PKG --libs sndfile` `$PKG --libs samplerate` `$PKG --libs liblo` -lxcb -lxkbcommon-x11 -lxkbcommon -lzstd $FLUIDSYNTH_LDFLAGS $RADIUM_BFD_LDFLAGS -liberty `$PKG --libs freetype2`"
 #`$PKGqt --libs Qt6X11Extras`"
 # -lX11-xcb -lxcb-keysyms -lxcb-xkb
 
@@ -312,10 +319,6 @@ fi
 
 #api/s7_types_generator.scm types
 
-# Touch PCH .d files to prevent make from rebuilding them during prerequisite generation.
-# They will be properly regenerated during the main 'make radium' call.
-touch Qt/Qt_precompiled.hpp.d audio/Faust_plugins_precompiled.hpp.d 2>/dev/null || true
-
 make api/s7_types.h buildtype.opt flagopts.opt api/radium_proc.h common/keyboard_sub_ids.h bin/radium_check_recent_libxcb bin/radium_show_message --stop
 
 if [[ $# -ge 1 ]] && [[ $1 == "test" ]] ; then
@@ -325,13 +328,16 @@ else
 		rm -f /tmp/run_preload
 		make /tmp/run_preload
 	fi
-	make radium $@ --stop # Can not use "exec make" here. Compilation stopped here I think, whether it succeeded or not.
+
+	# "--shuffle" actually improves compilation time by around 33% (75s -> ~50s), since Make compiles the longest running files last if we don't shuffle the order, sigh.
+	make radium --shuffle $@ --stop # Can not use "exec make" here. Compilation stopped here I think, whether it succeeded or not.
+	
 	#make ${T}Qt_instruments.o $@ --stop # Can not use "exec make" here. Compilation stopped here I think, whether it succeeded or not.
     
-	if ldd -r $RADIUM_BIN | sed 's/0x.*//' |grep -i bfd |grep -v libfdk ; then
-		printf "\033[1;31mError? Is bfd linked dynamically?\033[0m\n"
-		exit -1
-	fi
+	#if ldd -r $RADIUM_BIN | sed 's/0x.*//' |grep -i bfd |grep -v libfdk ; then
+	#	printf "\033[1;31mError? Is bfd linked dynamically?\033[0m\n"
+	#	exit -1
+	#fi
 fi
 
 if [[ $BUILDTYPE == RELEASE ]] ; then
@@ -350,55 +356,19 @@ cp -f bin/run_radium_linux.sh bin/radium
 
 ln -sf $RADIUM_BIN bin/
 
-echo "...making symlinks into /tmp/radium/_bin/"
-ln -sf `pwd`/bin/* /tmp/radium_bin/ || true
+echo "...making symlinks into $RADIUM_TMP_BIN_DIR/"
+ln -sf `pwd`/bin/* "$RADIUM_TMP_BIN_DIR/" || true
 echo "...finished"
 
 echo
 
 
-do_source_sanity_checks() {
-
-    echo
-    echo "Doing some source sanity checks. This might take a few seconds...."
-    echo
-    
-    if grep -n static\  */*.h */*.hpp */*/*.hpp */*/*/*.hpp */*/*/*/*.hpp */*/*.h */*/*/*/*.h */*/*.cpp */*.c */*.cpp */*.m */*/*.c */*/*.cpp */*/*/*.c */*/*/*/*.c */*/*/*.cpp 2>&1 | grep "\[" | grep -v "\[\]"|grep -v static\ void |grep -v Python-2.7.18 |grep -v python2.7/ | grep -v lrdf.c|grep -v unused_files |grep -v GTK |grep -v test\/ |grep -v X11\/ |grep -v amiga |grep -v faust-examples|grep -v temp\/ |grep -v "\[NO_STATIC_ARRAY_WARNING\]" |grep -v backup |grep -v mingw |grep -v Dropbox |grep -v packages |grep -v python-midi |grep -v "No such file or directory" ; then
-	echo
-	echo "ERROR in line(s) above. Static arrays may decrease GC performance notably.";
-	echo
-	exit -1
-    fi
-    
-    if [ -d .git ] ; then
-	if git grep -n R_ASSERT|grep \=|grep -v \=\=|grep -v \!\=|grep -v \>\=|grep -v \<\= |grep -v build_linux_common.sh ; then
-            echo
-            echo "ERROR in line(s) above. An R_ASSERT line is possibly wrongly used.";
-            echo
-            exit -1
-	fi            
-	
-	if git grep -n assert\(|grep -v START_JUCE_APPLICATION |grep -v assert\(\) |grep \=|grep -v \=\=|grep -v \!\=|grep -v \>\=|grep -v \<\= |grep -v build_linux_common.sh ; then
-            echo
-            echo "ERROR in line(s) above. An R_ASSERT line is possibly wrongly used.";
-            echo
-            exit -1
-	fi            
-	
-	if git grep -n -e if\( --or -e if\ \( *|grep \=|grep -v \=\=|grep -v \!\=|grep -v \>\=|grep -v \<\=|grep -v pluginhost|grep -v bin/scheme|grep -v rtmidi|grep -v python|grep -v amiga|grep -v unused_files|grep -v weakjack|grep -v radium_wrap_1.c|grep -v keybindings.conf |grep -v bin/help | grep -v Visualization-Library-master|grep -v "\[NO_IF_=_WARNING\]" |grep -v cloudflare ; then
-            echo
-            echo "ERROR in line(s) above. A single '=' can not be placed on the same line as an if.";
-            echo
-            exit -1
-	fi            
-    fi
-}
-
 if [[ $BUILDTYPE == RELEASE ]] ; then
-    do_source_sanity_checks
+    ./do_source_sanity_checks.sh
 elif [ $(($RANDOM % 20)) -eq 0 ]; then
-    do_source_sanity_checks
+    ./do_source_sanity_checks.sh
 fi
+
 
 echo "Build finished."
 

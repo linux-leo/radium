@@ -17,11 +17,18 @@ extern bool JUCE_audio_set_audio_thread_priority_of_current_thread(void);
 extern bool JUCE_audio_set_normal_thread_priority(radium_thread_t thread);
 extern double JUCE_audio_get_sample_rate(void);
 extern int JUCE_audio_get_buffer_size(void);
+extern const char *JUCE_audio_get_last_error(void);
 extern double JUCE_audio_time_at_cycle_start(void);
 extern int JUCE_get_num_xruns(void);
 
 extern void JUCE_audio_open_preferences_window(void);
 extern void JUCE_audio_close_preferences_window(void);
+
+#if defined(FOR_LINUX)
+extern void JUCE_ALSA_set_detect_xruns(bool doit); // Implemented in pluginhost's juce_ALSA_linux.cpp.
+#endif
+
+extern void JUCE_audio_apply_alsa_xrun_detection(bool doit);
 
 #ifdef __cplusplus
 extern bool JUCE_init_audio_device(JUCE_audio_device_callback callback, void *callback_data, std::function<void(int,float)> called_before_starting_audio);

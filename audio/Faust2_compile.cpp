@@ -64,6 +64,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. */
 #include <QStringList>
 
 #include "Faust2_compile.hpp"
+#include "Faust_sample_rate_overlay.hpp"
+#include "Faust_compiler_fpu.hpp"
 
 FaustDev2SoundfileData::~FaustDev2SoundfileData()
 {
@@ -334,6 +336,17 @@ dsp_factory *create_factory(const FaustDev2CompileConfig &config,
 
 	QString radium_path = config.radium_path.isEmpty() ? QCoreApplication::applicationDirPath() : config.radium_path;
 
+	if (config.sample_rate > 0)
+	{
+		QString overlay_error;
+		QString overlay_dir = radium::faust_get_sample_rate_overlay_dir(args_list, radium_path, config.sample_rate, overlay_error);
+		if (!overlay_dir.isEmpty())
+		{
+			args_list.push_back("-I");
+			args_list.push_back(overlay_dir);
+		}
+	}
+
 	int argc = args_list.size();
 	const char **argv = (const char**)calloc(argc, sizeof(char*));
 	for (int i = 0; i < argc; i++)
@@ -341,6 +354,9 @@ dsp_factory *create_factory(const FaustDev2CompileConfig &config,
 
 	std::string error_msg;
 
+	//radium::ScopedDenormalsDisabled disable_denormals;
+	//_mm_setcsr(_mm_getcsr() | 0x8040);
+	
 	dsp_factory *factory = NULL;
 #if !defined(WITHOUT_LLVM_IN_FAUST_DEV)
 	llvm_dsp_factory *llvm_factory = NULL;

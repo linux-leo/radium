@@ -211,6 +211,24 @@ DEFINE_ATOMIC(bool, g_program_has_ended) = false;
 
 #define DEBUG_MEMORY_ALLOC_MORE 0
 
+// See common/OS_Player_proc.h. Used to ignore the (ASAN-only) malloc/free
+// checks when executing code from instruments that are known to allocate/free
+// memory while the player lock is held (currently the old Pd plugin).
+static __thread int g_num_ignore_malloc_free_checks = 0;
+
+void PLAYER_push_ignore_malloc_free_checks(void){
+  g_num_ignore_malloc_free_checks++;
+}
+
+void PLAYER_pop_ignore_malloc_free_checks(void){
+  R_ASSERT(g_num_ignore_malloc_free_checks>0);
+  g_num_ignore_malloc_free_checks--;
+}
+
+bool PLAYER_ignore_malloc_free_checks(void){
+  return g_num_ignore_malloc_free_checks > 0;
+}
+
 #if !defined(RELEASE)
 
 // Comment out line below. Always do this in debug mode since it's useful to catch wrong usage of 'new'.
@@ -411,6 +429,9 @@ extern "C" {
 
 __attribute__((weak))
 void __sanitizer_malloc_hook(const volatile void *ptr, size_t size){
+  if (PLAYER_ignore_malloc_free_checks())
+    return;
+
 #if DEBUG_MEMORY_ALLOC_MORE
   if (g_is_allocating_or_freeing)
     return;
@@ -436,6 +457,9 @@ void __sanitizer_malloc_hook(const volatile void *ptr, size_t size){
 
 __attribute__((weak))
 void __sanitizer_free_hook(const volatile void *ptr){
+  if (PLAYER_ignore_malloc_free_checks())
+    return;
+
 #if DEBUG_MEMORY_ALLOC_MORE
   if (g_is_allocating_or_freeing)
     return;
@@ -1377,6 +1401,15 @@ public:
 
   MyApplication(int &argc,char **argv);
 
+  // Called when the main menu search popup takes over from an Alt-opened main menu.
+  // Otherwise the menu bar can be left in "about to navigate menues" mode.
+  void reset_menu_navigation(void){
+    menu_should_be_active = 0;
+    last_key_was_lalt = false;
+    last_released_key_was_lalt = false;
+    menu_was_active_at_least_key_press = false;
+  }
+
 protected:
 
   double _time_of_last_alt = -1;
@@ -1484,11 +1517,37 @@ protected:
         printf("   Main window has focus: %d. Menu active: %d. Menu visible: %d. Last was alt: %d\n", OS_GFX_main_window_has_focus(), GFX_MenuActive(), GFX_MenuVisible(window), g_last_pressed_key==EVENT_ALT_L);
       */
       
-      if (modifier==EVENT_ALT_L && OS_GFX_main_window_has_focus()){
+      if (modifier==EVENT_ALT_L && GFX_HamburgerPopupIsOpen()) {
+
+        // The hamburger menu is open. Left alt closes it instead of opening it again.
+        last_key_was_lalt = false;
+        last_released_key_was_lalt = false;
+        menu_was_active_at_least_key_press = false;
+        menu_should_be_active = 0;
+        must_return_true = true;
+
+        if (!is_key_press && g_last_pressed_key==EVENT_ALT_L && g_mouse_is_pressed==false){
+          reset_menu_navigation();
+          GFX_CloseHamburgerPopup();
+        }
+
+      } else if (modifier==EVENT_ALT_L && OS_GFX_main_window_has_focus()){
 
         //printf(   " last_key_was_alt: %d. Time now: %f. last time: %f. press: %d. Menu active: %d.  Duration: %f\n", last_released_key_was_lalt, TIME_get_ms(), _time_of_last_alt, is_key_press, GFX_MenuActive(), TIME_get_ms()- _time_of_last_alt);
 
-        if(last_released_key_was_lalt && !is_key_press && menu_was_active_at_least_key_press && g_last_pressed_key==EVENT_ALT_L && g_mouse_is_pressed==false) { //last_key_was_lalt==true && (TIME_get_ms() - _time_of_last_alt) < 200) {
+        if (SETTINGS_read_bool("show_main_menu_bar", false)==false) {
+
+          // The main menu bar is disabled. Left alt opens the hamburger popup menu instead.
+          last_key_was_lalt = false;
+          menu_should_be_active = 0;
+          must_return_true = true;
+
+          if (!is_key_press && g_last_pressed_key==EVENT_ALT_L && g_mouse_is_pressed==false){
+            reset_menu_navigation();
+            GFX_open_hamburger_popup_menu(NULL);
+          }
+
+        } else if(last_released_key_was_lalt && !is_key_press && menu_was_active_at_least_key_press && g_last_pressed_key==EVENT_ALT_L && g_mouse_is_pressed==false) { //last_key_was_lalt==true && (TIME_get_ms() - _time_of_last_alt) < 200) {
 
             // Double-pressed left alt key.
             
@@ -1648,6 +1707,13 @@ protected:
     RETURN_IF_DATA_IS_INACCESSIBLE(false);
 
     const int keynum = OS_SYSTEM_get_keynum(event);
+
+    // F12 toggles the track instrument popup. Key events are not dispatched to the keybinding
+    // system while a popup is open, so the toggle is handled here.
+    if (is_key_press && keynum==EVENT_F12 && GFX_InstrumentPopupIsOpen()){
+      GFX_CloseInstrumentPopup();
+      return true;
+    }
 
     // Ctrl+Space must always stop playback, even when a text widget (e.g. the
     // Faust Dev 2 editor or the LLM prompt) has keyboard focus: fall through
@@ -2229,10 +2295,14 @@ public slots:
     //OS_SYSTEM_ResetKeysUpDowns();
 #endif
   }
-
 };
+
 } // anon. namespace
 
+void OS_SYSTEM_reset_menu_navigation(void){
+  if (qapplication != NULL)
+    qapplication->reset_menu_navigation();
+}
 
 MyApplication::MyApplication(int &argc,char **argv)
   : QApplication(argc,argv)
@@ -3017,6 +3087,8 @@ protected:
     if (is_called_every_ms(15)){
       API_instruments_call_regularly();
     }
+
+    GFX_effect_sliders_call_very_often();
 
     GL_update();
     
@@ -3960,6 +4032,8 @@ int radium_main(const char *arg){
   //QApplication::setGraphicsSystem("raster");
 
 
+  bool colors_were_migrated = GFX_InitColorsAndMigrate();
+
   setApplicationColors(qapplication);
 
   g_qtgui_has_started = true;
@@ -4225,15 +4299,12 @@ int radium_main(const char *arg){
 
   //printf("col: -%s-, font: -%s-\n",SETTINGS_read_string("last_color_version","0.0"),SETTINGS_read_string("last_system_font_version","0.0"));
 
-  const char *last_color_version = "6.9.80";
-  
-  if(strcmp(SETTINGS_read_string("last_color_version","0.0"),last_color_version)){
+  if (colors_were_migrated) {
     GFX_Message(NULL,
                 "Note!\n\n"
-                "The default colors have changed. If you are using the default colors, you might want to go to the Edit menu and select \"Set Default Colors\".\n"
+                "The default colors have changed. Your old colors have been saved as the color configuration \"Previous\".\n"
                 "\n"
                 "You will only see this message once.");
-    SETTINGS_write_string("last_color_version",last_color_version);
   }
 
   if(strcmp(SETTINGS_read_string("last_system_font_version","0.0"),"1.9.21")){

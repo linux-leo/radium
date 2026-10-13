@@ -5,6 +5,8 @@ set -eEu
 
 export PYTHONEXE_NOT_AVAILABLE_YET=1
 
+export INCLUDE_FAUSTDEV_BUT_NOT_LLVM=1
+
 # Might want to uncomment the line below to make faust build with support for llvm.
 #export RADIUM_USE_CLANG=1
 
@@ -35,9 +37,11 @@ if uname -s |grep Darwin ; then
     export COMMON_CFLAGS="$COMMON_CFLAGS -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}"
     # Universal binaries. (Used for faust, fluidsynth, qscintilla, etc.)
     export DARWIN_ARCH_FLAGS="-arch arm64 -arch x86_64 "
+    export DARWIN_MIN_FLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}"
     export DARWIN_CMAKEOPT="-DCMAKE_OSX_ARCHITECTURES=\"arm64;x86_64\" -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}"
 else
     export DARWIN_ARCH_FLAGS=""
+    export DARWIN_MIN_FLAGS=""
     export DARWIN_CMAKEOPT=""
 fi
    
@@ -181,6 +185,320 @@ build_libpds() {
 }
 
 
+# Official libpd (https://github.com/libpd/libpd), tracking current Pd Vanilla.
+# Built with multiple instance support (PDINSTANCE/PDTHREADS).
+build_libpd() {
+
+    rm -fr libpd
+    tar xvzf libpd-0.16.1.tar.gz
+    cd libpd/
+
+    # Apply Radium's patches.
+    for patch_file in ../libpd_patches/*.patch ; do
+        patch -p1 --batch --forward < "$patch_file"
+    done
+
+    # Always build with debug symbols and frame pointers. The Makefile's
+    # OPT_CFLAGS contains -fomit-frame-pointer, but ADDITIONAL_CFLAGS is
+    # appended last, so -fno-omit-frame-pointer overrides it.
+    LIBPD_DEBUG_FLAGS="-g -fno-omit-frame-pointer"
+
+    LIBPD_LINK_FLAGS=""
+
+    if uname -s |grep Darwin ; then
+        # Build universal, same as the other Mac packages. (Debug builds of
+        # Radium are arm64 only, while release builds are arm64+x86_64.)
+        LIBPD_DEBUG_FLAGS="$LIBPD_DEBUG_FLAGS $DARWIN_ARCH_FLAGS $DARWIN_MIN_FLAGS"
+        LIBPD_LINK_FLAGS="$DARWIN_ARCH_FLAGS $DARWIN_MIN_FLAGS"
+
+        # The dylib is placed in the bundled packages directory, both for dev
+        # builds (via the /tmp/radium_bin/packages symlink) and for Radium.app.
+        LIBPD_LINK_FLAGS="$LIBPD_LINK_FLAGS -Wl,-install_name,@executable_path/packages/libpd/libs/libpd.dylib"
+
+        # The Mac GUI needs Tcl/Tk 8.6. The system /usr/bin/wish is Tk 8.5,
+        # which is killed by newer versions of MacOS, so let sys_startgui()
+        # try one of these first. WISH must expand to a C string literal.
+        for wish in /opt/local/libexec/tk-quartz/wish8.6 /opt/local/bin/wish8.6 /opt/homebrew/bin/wish8.6 ; do
+            if [ -x "$wish" ] ; then
+                LIBPD_DEBUG_FLAGS="$LIBPD_DEBUG_FLAGS -DWISH='\"$wish\"'"
+                break
+            fi
+        done
+    else
+        LIBPD_LINK_FLAGS="-Wl,-soname,libpd.so"
+    fi
+
+    make clean
+    make -j`nproc` libpd STATIC=true MULTI=true UTIL=true EXTRA=true ADDITIONAL_CFLAGS="$LIBPD_DEBUG_FLAGS" ADDITIONAL_LDFLAGS="$LIBPD_LINK_FLAGS"
+
+    # Note: Radium's libpds wrapper (libpds/) for pd2 (not pd1) is compiled directly into the
+    # Radium binary by Makefile.Qt, so there's nothing to build here.
+
+    cd ..
+}
+
+
+# Build the self-contained Wish.app that the Pd2 instrument uses to show the
+# Pd GUI (tcl/pd-gui.tcl). It is installed as libpd/Wish.app, next to the
+# pure-data directory, where the patched sys_startgui() looks for it before
+# falling back to a Wish/Tcl-Tk installed on the machine.
+#
+# wish is just the Tk shell, so this bundles both Tcl (interpreter + script
+# library) and Tk (widgets + script library) as frameworks inside the app,
+# built from the pinned tarballs. The "embedded" make targets are the ones
+# pure-data uses (see pure-data/mac/tcltk-wish.sh).
+#
+# The build is universal (x86_64+arm64) with the same macOS deployment target
+# as the rest of Radium, since create_app.sh checks every Mach-O file in the
+# app bundle.
+build_tcltk_wish() {
+
+    # Note: the framework dir is "Versions/8.6" for all 8.6.x releases.
+    TCLTK_VERSION=8.6.17
+    TCLTK_FRAMEWORK_VERSION=8.6
+    WISH_DIR="`pwd`/tcltk-wish-embedded"
+    WISH_APP="`pwd`/libpd/Wish.app"
+
+    if [ ! -e libpd/pure-data/tcl/pd-gui.tcl ]; then
+        echo "build_tcltk_wish: libpd has not been extracted yet (missing libpd/pure-data/tcl/pd-gui.tcl). Run build_libpd first." >&2
+        exit 1
+    fi
+
+    rm -rf tcl$TCLTK_VERSION tk$TCLTK_VERSION "$WISH_DIR" build
+
+    tar xvzf tcl$TCLTK_VERSION-src.tar.gz
+    tar xvzf tk$TCLTK_VERSION-src.tar.gz
+
+    CFLAGS="$DARWIN_ARCH_FLAGS $DARWIN_MIN_FLAGS" make -C tcl$TCLTK_VERSION/macosx embedded
+    CFLAGS="$DARWIN_ARCH_FLAGS $DARWIN_MIN_FLAGS" make -C tk$TCLTK_VERSION/macosx embedded
+    CFLAGS="$DARWIN_ARCH_FLAGS $DARWIN_MIN_FLAGS" make -C tcl$TCLTK_VERSION/macosx install-embedded INSTALL_ROOT="$WISH_DIR"
+    CFLAGS="$DARWIN_ARCH_FLAGS $DARWIN_MIN_FLAGS" make -C tk$TCLTK_VERSION/macosx install-embedded INSTALL_ROOT="$WISH_DIR"
+
+    rm -rf "$WISH_APP"
+    cp -a "$WISH_DIR/Applications/Utilities/Wish.app" "$WISH_APP"
+
+    # Tk's install-embedded is supposed to point the Wish binary to the
+    # frameworks inside the app, but its install_name_tool invocation fails
+    # with current Xcode versions, leaving references to /Library/Frameworks
+    # (where Tcl/Tk normally is not installed) in place. Fix the install
+    # names here instead.
+    chmod -R u+w "$WISH_APP"
+    TCL_FRAMEWORK=/Library/Frameworks/Tcl.framework/Versions/$TCLTK_FRAMEWORK_VERSION/Tcl
+    TK_FRAMEWORK=/Library/Frameworks/Tk.framework/Versions/$TCLTK_FRAMEWORK_VERSION/Tk
+    install_name_tool -change $TCL_FRAMEWORK @executable_path/../Frameworks/Tcl.framework/Versions/$TCLTK_FRAMEWORK_VERSION/Tcl "$WISH_APP/Contents/MacOS/Wish"
+    install_name_tool -change $TK_FRAMEWORK @executable_path/../Frameworks/Tk.framework/Versions/$TCLTK_FRAMEWORK_VERSION/Tk "$WISH_APP/Contents/MacOS/Wish"
+    install_name_tool -id @executable_path/../Frameworks/Tcl.framework/Versions/$TCLTK_FRAMEWORK_VERSION/Tcl "$WISH_APP/Contents/Frameworks/Tcl.framework/Versions/$TCLTK_FRAMEWORK_VERSION/Tcl"
+    install_name_tool -id @executable_path/../Frameworks/Tk.framework/Versions/$TCLTK_FRAMEWORK_VERSION/Tk "$WISH_APP/Contents/Frameworks/Tk.framework/Versions/$TCLTK_FRAMEWORK_VERSION/Tk"
+
+    rm -rf tcl$TCLTK_VERSION tk$TCLTK_VERSION "$WISH_DIR" build
+}
+
+
+# Build the dynamically loaded Pd externals used by the Pd2 instrument.
+# The library list, pinned sources and per-library build options live in
+# pd_externals/pd_externals.list. The externals are compiled against the
+# libpd headers with the same multi-instance settings as libpd itself
+# (-DPDINSTANCE -DPDTHREADS), since pd_this is a TLS symbol and the
+# s_float/s_list globals are per-instance macros that are not exported by
+# the MULTI build of libpd.
+#
+# Each library is installed into its own subdirectory of bin/pd/externals;
+# the Pd2 instrument adds every subdirectory to its search path.
+#
+# The author/copyright/license keys in the manifest are written to
+# pd/externals/pd2-externals-credits.txt, which the Help menu's "List of
+# included Pd externals in Pd2" listing (bin/scheme/main_menus.scm) reads.
+build_pd_externals() {
+
+    EXTERNALS_SRC="`pwd`/pd_externals"
+    BUILD_EXTERNAL="`pwd`/build_pd_external.sh"
+    EXTERNALS_DIR="`pwd`/../pd/externals"
+
+    if [ ! -f "$BUILD_EXTERNAL" ]; then
+        echo "Missing $BUILD_EXTERNAL" >&2
+        exit 1
+    fi
+    if [ ! -f "$EXTERNALS_SRC/pd_externals.list" ]; then
+        echo "Missing $EXTERNALS_SRC/pd_externals.list" >&2
+        exit 1
+    fi
+
+    rm -rf "$EXTERNALS_DIR"
+    mkdir -p "$EXTERNALS_DIR"
+
+    name=""
+    tarball=""
+    srcdir=""
+    flags=""
+    args=""
+    patches=""
+    exclude=""
+    install_dirs=""
+    cppflags=""
+    cflags=""
+    author=""
+    copyright=""
+    license=""
+    submodule_path=""
+    submodule_tarball=""
+    pd_externals_credits=""
+
+    build_one() {
+        [ -n "$name" ] || return 0
+
+        # For development: build only the named libraries.
+        if [ -n "${PD2_EXTERNALS_ONLY:-}" ]; then
+            case " $PD2_EXTERNALS_ONLY " in
+                *" $name "*) ;;
+                *) return 0 ;;
+            esac
+        fi
+
+        echo
+        echo "==== Building Pd external '$name' ===="
+
+        tarball_path="$EXTERNALS_SRC/$tarball"
+        if [ ! -f "$tarball_path" ]; then
+            echo "Tarball not found: $tarball_path" >&2
+            exit 1
+        fi
+
+        rm -rf "`pwd`/$srcdir"
+        tar xzf "$tarball_path"
+
+        # Directories/files not wanted in the build can be listed in exclude.
+        if [ -n "$exclude" ]; then
+            for exclude_path in $exclude ; do
+                rm -rf "`pwd`/$srcdir/$exclude_path"
+            done
+        fi
+
+        # Some projects use git submodules whose contents GitHub's archive
+        # does not contain. submodule_tarball is a separately pinned archive
+        # that is copied over submodule_path after extraction.
+        if [ -n "$submodule_path" ]; then
+            sub_tarball_path="$EXTERNALS_SRC/$submodule_tarball"
+            if [ ! -f "$sub_tarball_path" ]; then
+                echo "Submodule tarball not found: $sub_tarball_path" >&2
+                exit 1
+            fi
+
+            sub_tmpdir="`pwd`/.pd2-submodule-$$"
+            rm -rf "$sub_tmpdir"
+            mkdir -p "$sub_tmpdir"
+            tar xzf "$sub_tarball_path" -C "$sub_tmpdir"
+            sub_source="`find "$sub_tmpdir" -mindepth 1 -maxdepth 1 -type d | head -n 1`"
+            if [ -z "$sub_source" ]; then
+                echo "Could not find the top-level directory in $submodule_tarball" >&2
+                rm -rf "$sub_tmpdir"
+                exit 1
+            fi
+            rm -rf "`pwd`/$srcdir/$submodule_path"
+            mkdir -p "`pwd`/$srcdir/$submodule_path"
+            cp -a "$sub_source"/. "`pwd`/$srcdir/$submodule_path/"
+            rm -rf "$sub_tmpdir"
+        fi
+
+        for patch_file in $patches ; do
+            patch -p1 -d "$srcdir" --batch --forward < "$EXTERNALS_SRC/$patch_file"
+        done
+
+        # Word splitting of $flags, $args, $cppflags and $cflags is intentional.
+        BUILD_ENV=()
+        if [ -n "$cppflags" ]; then
+            BUILD_ENV+=("PD2_CPPFLAGS=$cppflags")
+        fi
+        if [ -n "$cflags" ]; then
+            BUILD_ENV+=("PD2_CFLAGS=$cflags")
+        fi
+
+        # shellcheck disable=SC2086
+        env ${BUILD_ENV[@]+"${BUILD_ENV[@]}"} \
+            "$BUILD_EXTERNAL" $flags --dest "$EXTERNALS_DIR" --lib-name "$name" \
+            "`pwd`/$srcdir" $args
+
+        # Extra subdirectories (e.g. examples) shipped next to the library.
+        if [ -n "$install_dirs" ]; then
+            for extra_dir in $install_dirs ; do
+                if [ -d "`pwd`/$srcdir/$extra_dir" ]; then
+                    cp -a "`pwd`/$srcdir/$extra_dir" "$EXTERNALS_DIR/$name/"
+                else
+                    echo "install_dirs entry not found: $srcdir/$extra_dir" >&2
+                    exit 1
+                fi
+            done
+        fi
+
+        # Credits for the "List of included Pd externals in Pd2" listing.
+        pd_externals_credits+="$name|$author|$copyright|$license
+"
+    }
+
+    while IFS= read -r line || [ -n "$line" ] ; do
+        line="${line%$'\r'}"
+        case "$line" in
+            ""|\#*)
+                continue
+                ;;
+        esac
+        case "$line" in
+            \[*\])
+                build_one
+                name="${line#[}"
+                name="${name%]}"
+                tarball=""
+                srcdir=""
+                flags=""
+                args=""
+                patches=""
+                exclude=""
+                install_dirs=""
+                cppflags=""
+                cflags=""
+                author=""
+                copyright=""
+                license=""
+                submodule_path=""
+                submodule_tarball=""
+                ;;
+            *=*)
+                key="${line%%=*}"
+                value="${line#*=}"
+                key="`echo "$key" | tr -d '[:space:]'`"
+                value="`echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`"
+                case "$key" in
+                    tarball)          tarball="$value" ;;
+                    srcdir)           srcdir="$value" ;;
+                    flags)            flags="$value" ;;
+                    args)             args="$value" ;;
+                    patches)          patches="$value" ;;
+                    exclude)          exclude="$value" ;;
+                    install_dirs)     install_dirs="$value" ;;
+                    cppflags)         cppflags="$value" ;;
+                    cflags)           cflags="$value" ;;
+                    author)           author="$value" ;;
+                    copyright)        copyright="$value" ;;
+                    license)          license="$value" ;;
+                    submodule_path)   submodule_path="$value" ;;
+                    submodule_tarball) submodule_tarball="$value" ;;
+                esac
+                ;;
+        esac
+    done < "$EXTERNALS_SRC/pd_externals.list"
+    build_one
+
+    printf '%s' "$pd_externals_credits" > "$EXTERNALS_DIR/pd2-externals-credits.txt"
+
+    # Check the dynamic symbol tables of libpd and all installed externals for
+    # clashes. The externals are loaded with dlopen(RTLD_GLOBAL), so an
+    # external data symbol that libpd also defines (ggee's slider_widgetbehavior
+    # used to shadow the built-in [hsl]/[vsl] behavior) and ambiguous undefined
+    # references (load-order dependent) are real bugs. See
+    # pd_externals/check_symbol_clashes.sh.
+    "$EXTERNALS_SRC/check_symbol_clashes.sh" --externals "$EXTERNALS_DIR"
+}
+
+
 build_qhttpserver() {
 
     rm -fr qhttpserver-master
@@ -278,9 +596,13 @@ build_qscintilla() {
     tar xvzf QScintilla_src-2.14.0.tar.gz 
     cd QScintilla_src-2.14.0/src
     echo "CONFIG += staticlib" >> qscintilla.pro
-    $QMAKE QMAKE_CFLAGS+="-march=native" QMAKE_CXXFLAGS+="-march=native" QMAKE_LFLAGS+="-march=native"
-    # install_name_tool can't handle fat archive members. Not needed for a static lib anyway.
-    # sed -i '' '/install_name_tool -id/d' Makefile
+    if uname -s |grep Darwin ; then
+	$QMAKE QMAKE_CFLAGS+="$DARWIN_ARCH_FLAGS" QMAKE_CXXFLAGS+="$DARWIN_ARCH_FLAGS" QMAKE_LFLAGS+="$DARWIN_ARCH_FLAGS"
+	# install_name_tool can't handle fat archive members. Not needed for a static lib anyway.
+	sed -i '' '/install_name_tool -id/d' Makefile
+    else
+	$QMAKE QMAKE_CFLAGS+="-march=native" QMAKE_CXXFLAGS+="-march=native" QMAKE_LFLAGS+="-march=native"
+    fi
     patch -p0 <../../qscintilla.patch
     make -j`nproc`
     cd ../..
@@ -336,8 +658,24 @@ if uname -s |grep Linux ; then
     if ! arch |grep -e arm -e aarch64 ; then
         build_libpds
     fi
-    #build_xcb
-    echo "finished compiling libpds and xcb" # need this line to avoid script failing if the two lines above are commented out.
+    build_xcb
+	echo "Finished compiling libpds and xcb" # need this line to avoid script failing if all the lines above are commented out.
+fi
+
+if uname -s |grep -e Linux -e Darwin ; then
+    build_libpd
+    build_pd_externals
+    echo "Finished building libpd and pd externals" # need this line to avoid script failing if the line above is commented out.
+fi
+
+# The Wish.app is only used by the Pd2 instrument (and only on MacOS).
+# build_tcltk_wish installs it next to the pure-data directory, so libpd must
+# have been extracted (run build_libpd) first.
+if uname -s |grep Darwin ; then
+    if ! is_0 $INCLUDE_PD2DEV ; then
+        build_tcltk_wish
+        echo "Finished building the Tcl/Tk Wish.app"
+    fi
 fi
 
 
