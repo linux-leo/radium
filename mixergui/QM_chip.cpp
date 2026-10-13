@@ -2141,7 +2141,7 @@ void Chip::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWid
   bool is_current_patch = get_current_instruments_gui_patch()==patch;
   bool is_current_patch_under_mouse = patch->id.id == getCurrentInstrumentUnderMouse().id;
 
-  QColor text_color = get_qcolor(is_current_patch ? SEQUENCER_TEXT_CURRENT_BLOCK_COLOR_NUM : MIXER_TEXT_COLOR_NUM);
+  QColor text_color = get_qcolor(MIXER_TEXT_COLOR_NUM);
   //if(is_current_patch==false)
   text_color.setAlpha(160);
 
