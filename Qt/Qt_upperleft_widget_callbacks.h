@@ -253,9 +253,6 @@ class Upperleft_widget : public QWidget, public Ui::Upperleft_widget {
           bottom_bar->BPMWidget->hide();
         else
           bottom_bar->BPMWidget->show();
-        
-        if (window->show_lpb_track && window->show_bpm_track)
-          bottom_bar->tempo_line->hide();
       }
       
     } GL_unlock();

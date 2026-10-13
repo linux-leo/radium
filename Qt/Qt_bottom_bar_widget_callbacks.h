@@ -185,7 +185,6 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
     // For now, I haven't tried any machine where smooth scrolling doesn't work better than non-smooth scrolling. Anyay, just hide the sps options for now.
     sps->hide();
     sps_label->hide();
-    sps_line->hide();
 
     // Adjust velocity slider widths
     {
@@ -336,15 +335,6 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
     editlines_label->hide();
     editlines->hide();
 
-    line_5->hide();
-    line_6->hide();
-    line_8->hide();
-    line_9->hide();
-    line_10->hide();
-    line_11->hide();
-    el_line->hide();
-    sps_line->hide();
-    tempo_line->hide();
   }
 
   /*
