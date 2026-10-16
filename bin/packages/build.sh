@@ -647,7 +647,7 @@ build_xcb() {
 
 source ./build_python27.sh
 
-build_faust
+#build_faust
 #build_qhttpserver
 #build_gc
 #build_fluidsynth
@@ -658,7 +658,7 @@ if uname -s |grep Linux ; then
     if ! arch |grep -e arm -e aarch64 ; then
         build_libpds
     fi
-    build_xcb
+    #build_xcb
 	echo "Finished compiling libpds and xcb" # need this line to avoid script failing if all the lines above are commented out.
 fi
 
