@@ -310,10 +310,10 @@ class ScrollArea : public QWidget {
         _scroll_area->setUpdatesEnabled(true);
         //printf("TimerEvent ____ gakkgakk %p\n",_scroll_area);
         
-        _scroll_area->updateScrollbars();
         _scroll_area->getWidget()->adjustSize();
         if (_scroll_area->getWidget()->layout() != NULL)
           _scroll_area->getWidget()->layout()->update(); // If not, content don't always update.
+        _scroll_area->updateScrollbars(false,true);
 
         stop();
       }

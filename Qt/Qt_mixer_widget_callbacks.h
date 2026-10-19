@@ -262,7 +262,7 @@ class Mixer_widget : public QWidget, public Ui::Mixer_widget, radium::Timer{
     // don't need the zoom buttons.
     zoomin_button->hide();
     zoomout_button->hide();
-    
+
     update_ab_buttons(true);
     
     set_modular_mixer_type(true);
@@ -327,6 +327,33 @@ class Mixer_widget : public QWidget, public Ui::Mixer_widget, radium::Timer{
     rows4->_show_popup_menu = [](){
       S7CALL2(void_void,"FROM_C-show-mixer-R4-popup-menu");
     };
+    const int control_width = window_mode->sizeHint().width() * 5 / 4 - 2;
+    const int control_height = fontMetrics().height() + 4;
+    const int grid_height = (fontMetrics().height() + 6) * 5 / 4;
+    auto size_button = [=](auto *button, bool in_grid){
+      button->x1_border = button->x2_border = 1;
+      button->y1_border = button->y2_border = 1;
+      button->setFixedSize(in_grid ? grid_height - 2 : control_width,
+                           in_grid ? grid_height : control_height);
+    };
+    for (auto *button : {ab_a, ab_b, ab_c, ab_d, ab_e, ab_f, ab_g, ab_h,
+                         rows1, rows2, rows3, rows4})
+      size_button(button, true);
+    for (auto *button : {ab_reset, ab_settings_button})
+      size_button(button, true);
+    for (auto *button : {window_mode, show_modular, include_instrument_widget,
+                         include_sequencer_widget, show_cpu_usage,
+                         connections_visibility, bus_connections_visibility,
+                         ratio13, ratio1, ratio31})
+      size_button(button, false);
+    for (auto *button : {zoomin_button, zoomout_button, zoomreset_button,
+                         mixer_direction_menu_button, help_button})
+      size_button(button, false);
+
+    // Exclusive choices use the same highlight-only selection as A/B;
+    // independent toggles retain their checkmarks in both mixer views.
+    for (auto *button : {ratio13, ratio1, ratio31, rows1, rows2, rows3, rows4})
+      button->_show_enabled_marker = false;
   }
 
   void enterEvent(QEnterEvent *event) override {
@@ -340,20 +367,10 @@ class Mixer_widget : public QWidget, public Ui::Mixer_widget, radium::Timer{
     const QString names[MW_NUM_AB]    = {"A",  "B",  "C",  "D",  "E",  "F",  "G",  "H"};
     const QString selnames[MW_NUM_AB] = {"A*", "B*", "C*", "D*", "E*", "F*", "G*", "H*"};
 
-    static int _ab_checkbox_width=-1;
-    
-    if (_ab_checkbox_width==-1){
-      ab_a->adjustSize();
-      _ab_checkbox_width = ab_a->width() * 2 / 3;
-    }
-
     for(int i=0;i<MW_NUM_AB;i++){
 
       buttons[i]->_show_enabled_marker = false;
       
-      buttons[i]->setMinimumWidth(_ab_checkbox_width);
-      buttons[i]->setMaximumWidth(_ab_checkbox_width);
-
       if(curr==i || MW_is_ab_valid(i))
         buttons[i]->setText(selnames[i]);
       else
@@ -365,11 +382,6 @@ class Mixer_widget : public QWidget, public Ui::Mixer_widget, radium::Timer{
       }
     }
 
-    // Note: The y1 value of buttons looks like they are 1 pixel above y1 value of checkboxes. It only happens in the mixer top bar. I don't understand why, and I can't even figure out an easy way to fix it.
-    ab_reset->setMinimumWidth(_ab_checkbox_width);
-    ab_reset->setMaximumWidth(_ab_checkbox_width);
-    ab_settings_button->setMinimumWidth(_ab_checkbox_width);
-    ab_settings_button->setMaximumWidth(_ab_checkbox_width);
   }
 
   MyQCheckBox *get_ab_checkbox(int num){
@@ -464,7 +476,7 @@ public:
           QWidget *w = API_gui_get_widget(_mixer_strips_gui);
           //safe_set_parent(w, bottom_widget);
           //w->setFixedSize(width(), height()-50);
-          verticalLayout->insertWidget(1, w, 1);
+          verticalLayout->insertWidget(0, w, 1);
           view->hide();
           /*
             mixer_layout->update();
@@ -1153,4 +1165,3 @@ void GFX_showHideMixerWidget(void){
     g_view->hide();
 }
 #endif
-

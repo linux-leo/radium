@@ -76,7 +76,7 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
       _navigator_widget = SEQUENCER_create_navigator_widget();
       
       if (_navigator_widget !=NULL) {
-        horizontalLayout_2->insertWidget(3, _navigator_widget);
+        overview_group_layout->addWidget(_navigator_widget);
         _navigator_widget->show();
       }
       
@@ -166,6 +166,12 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
         
     setMinimumHeight(fm.height()*3/2);
     setMaximumHeight(fm.height()*3/2);
+    // A control-relative gap, fixed across window resizes. Internal group
+    // layouts retain their existing spacing and have no added margins.
+    horizontalLayout_2->setSpacing(qRound(maximumHeight() / 4.0));
+    horizontalLayout_2->setStretchFactor(overview_group, 1);
+    cpu_group_layout->setContentsMargins(horizontalLayout_2->spacing(), 0, 0, 0);
+    update_timing_group_visibility();
     //frame->setMinimumHeight(fm.height()*3/2);
     //frame->setMaximumHeight(fm.height()*3/2);
 
@@ -205,16 +211,16 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
     sps->setValue(scrolls_per_second);
     
     // For now, I haven't tried any machine where smooth scrolling doesn't work better than non-smooth scrolling. Anyay, just hide the sps options for now.
-    sps->hide();
-    sps_label->hide();
+    scrollrate_group->hide();
 
     // cpu / xruns
     {
       int64_t guinum = S7CALL2(int_void,"FROM_C-create-cpu-usage-widget");
       QWidget *cpuusage = API_gui_get_widget(guinum);
       if (cpuusage != NULL)
-        horizontalLayout_2->addWidget(cpuusage);
+        cpu_group_layout->addWidget(cpuusage);
       else{
+        cpu_group->hide();
         R_ASSERT_NON_RELEASE(false);
       }
     }
@@ -307,6 +313,14 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
     adjustWidthToFitText(signature, "16/16");
     adjustWidthToFitText(lpb, "99");
     adjustWidthToFitText(bpm, "999");
+    for (auto *spinbox : {octave, editlines}) {
+      QStyleOptionSpinBox option;
+      spinbox->initStyleOption(&option);
+      const QRect value_rect = spinbox->style()->subControlRect(QStyle::CC_SpinBox, &option,
+                                                               QStyle::SC_SpinBoxEditField, spinbox);
+      // Match LPB's value width while retaining the native arrow hit area.
+      spinbox->setFixedWidth(lpb->width() + spinbox->width() - value_rect.width());
+    }
     system_volume_slider->setMinimumWidth(120 * g_gfx_scale);
   }
 
@@ -319,15 +333,23 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
 
   MyQButton *_hamburger_button = NULL;
       
+  void update_timing_group_visibility() {
+    const bool separate_signature_and_lpb = !SignatureWidget->isHidden()
+                                           && !LPBWidget->isHidden() && !lpb->isHidden();
+    LPBWidget->setContentsMargins(separate_signature_and_lpb ? horizontalLayout_2->spacing() : 0,
+                                 0, 0, 0);
+    timing_group->setVisible(!SignatureWidget->isHidden()
+                             || (!LPBWidget->isHidden() && !lpb->isHidden())
+                             || !BPMWidget->isHidden());
+  }
+
   void remove_editor_elements(void){
 
-    velocity_controls->hide();
-    drunk_velocity_onoff->hide();
+    velocity_group->hide();
     
     edit_onoff->hide();
     
-    octave_label->hide();
-    octave->hide();
+    octave_group->hide();
     
     lpb->hide();
     lpb_label->hide();
@@ -335,8 +357,8 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
     play_cursor_onoff->hide();
     editor_follows_play_cursor_onoff->hide();
 
-    editlines_label->hide();
-    editlines->hide();
+    editlines_group->hide();
+    update_timing_group_visibility();
 
   }
 
@@ -698,8 +720,7 @@ QWidget *BottomBar_create(QWidget *parent, bool include_editor_elements, bool in
     hamburger_button->_show_popup_menu = [](){
       S7CALL2(void_void, "FROM_C-show-hamburger-keybinding-popup");
     };
-    ret->horizontalLayout_2->insertWidget(0, hamburger_button);
-    ret->horizontalLayout_2->insertSpacing(1, 2 * g_gfx_scale); // Some space between the hamburger and the status line.
+    ret->menu_group_layout->addWidget(hamburger_button);
     ret->_hamburger_button = hamburger_button;
   }
   

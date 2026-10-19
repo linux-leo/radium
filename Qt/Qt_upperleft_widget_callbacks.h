@@ -253,6 +253,8 @@ class Upperleft_widget : public QWidget, public Ui::Upperleft_widget {
           bottom_bar->BPMWidget->hide();
         else
           bottom_bar->BPMWidget->show();
+
+        bottom_bar->update_timing_group_visibility();
       }
       
     } GL_unlock();

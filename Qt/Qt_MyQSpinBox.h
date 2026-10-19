@@ -62,8 +62,12 @@ struct MyQSpinBox : public GL_PauseCaller, public QSpinBox{
   void initStyleOption(QStyleOptionSpinBox *option) const override {
     QSpinBox::initStyleOption(option);
     // Keep the flat arrows borderless while pressed; Qt still handles stepping.
-    if (_highlight_arrow_hover && !hasFrame())
+    if (_highlight_arrow_hover && !hasFrame()) {
       option->state &= ~QStyle::State_Sunken;
+      // Fusion derives the arrow/value separator from Window, even without a
+      // frame. Change only the paint option; keep the widget's hover palette.
+      option->palette.setColor(QPalette::Window, Qt::transparent);
+    }
   }
 
   void paintEvent(QPaintEvent *event) override {
