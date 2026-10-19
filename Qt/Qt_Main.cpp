@@ -4231,18 +4231,6 @@ int radium_main(const char *arg){
       }
 
       radium::Splitter *ysplitter = dynamic_cast<radium::Splitter*>(API_get_main_ysplitter()); //new radium::Splitter(Qt::Vertical, main_window);
-      // A fixed-width upper pane must not cap the width of the lower tabs.
-      // QSplitter propagates child maximum widths; a layout container keeps
-      // that constraint local and leaves unused upper space on the right.
-      auto *upper_container = new QWidget;
-      auto *upper_layout = new QHBoxLayout(upper_container);
-      upper_layout->setContentsMargins(0, 0, 0, 0);
-      upper_layout->setSpacing(0);
-      ysplitter->replaceWidget(ysplitter->indexOf(xsplitter), upper_container);
-      upper_layout->addWidget(xsplitter, 1);
-      upper_layout->addStretch(0);
-      xsplitter->show();
-
       ysplitter->setHandleWidth(1);
       //ysplitter->setSizePolicy(QSizePolicy::MinimumExpanding,QSizePolicy::MinimumExpanding); // NOTE: Causes main window height to grow and grow when adding/removing widget. Strange.
       

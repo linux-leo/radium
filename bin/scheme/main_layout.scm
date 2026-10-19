@@ -20,7 +20,13 @@
                                           
 (define (FROM-C-get-main-y-splitter)
   (when (not *ysplitter-has-initied*)
-    (<gui> :add *ysplitter* (<gui> :get-main-x-splitter) 10000000)
+    ;; Keep the upper splitter's maximum width from constraining the lower tabs
+    ;; when only a fixed-width strip is visible. Unused space stays on the right.
+    (define upper-container (<gui> :horizontal-layout))
+    (<gui> :set-layout-spacing upper-container 0 0 0 0 0)
+    (<gui> :add upper-container (<gui> :get-main-x-splitter) 1)
+    (<gui> :add-layout-space upper-container 0 0 #t #f)
+    (<gui> :add *ysplitter* upper-container 10000000)
     (<gui> :add *ysplitter* (FROM-C-get-lowertab-gui) 0)
     (set! *ysplitter-has-initied* #t))
   *ysplitter*)
