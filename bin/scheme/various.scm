@@ -1085,6 +1085,19 @@
 
 ;;; Bottom bar
 
+(define (FROM_C-show-bottom-bar-octave-popup-menu)
+  (popup-menu
+   (get-keybinding-configuration-popup-menu-entries "ra:dec-key-add"
+                                                    '(12)
+                                                    "FOCUS_EDITOR")
+   "-------------"
+   (get-keybinding-configuration-popup-menu-entries "ra:inc-key-add"
+                                                    '(12)
+                                                    "FOCUS_EDITOR")
+   "-------------"
+   "Help keybindings" show-keybinding-help-window
+   ))
+
 (define (FROM_C-show-bottom-bar-octave-down-popup-menu)
   (popup-menu
    (get-keybinding-configuration-popup-menu-entries "ra:dec-key-add"
@@ -1100,6 +1113,15 @@
    (get-keybinding-configuration-popup-menu-entries "ra:inc-key-add"
                                                     '(12)
                                                     "FOCUS_EDITOR")
+   "-------------"
+   "Help keybindings" show-keybinding-help-window
+   ))
+
+(define (FROM_C-show-bottom-bar-history-popup-menu)
+  (popup-menu
+   (get-keybinding-configuration-popup-menu-entries "ra:undo" '() "")
+   "-------------"
+   (get-keybinding-configuration-popup-menu-entries "ra:redo" '() "")
    "-------------"
    "Help keybindings" show-keybinding-help-window
    ))

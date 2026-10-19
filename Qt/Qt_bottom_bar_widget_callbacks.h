@@ -169,6 +169,16 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
     //frame->setMinimumHeight(fm.height()*3/2);
     //frame->setMaximumHeight(fm.height()*3/2);
 
+    velocity_controls->setFixedSize(fm.horizontalAdvance("Max. Vel: 100%") + 20,
+                                    maximumHeight());
+    for (auto *slider : {min_velocity_slider, velocity_slider}) {
+      // These two sliders share the bar height; skip MyQSlider's normal
+      // minimum-height initialization on first paint.
+      slider->_minimum_size_set = true;
+      slider->setMinimumHeight(0);
+      slider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
+    }
+
     min_velocity_slider->setValue(4000);
     velocity_slider->setValue(8000);
     update_velocity_sliders();
@@ -178,6 +188,16 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
     if(scrolls_per_second==-1)
       scrolls_per_second = SETTINGS_read_int32("scrolls_per_second", default_scrolls_per_second);
 
+    octave->setArrowHoverHighlight(true);
+    editlines->setArrowHoverHighlight(true);
+    if (!g_is_starting_up)
+      history->setHistoryState(Undo_num_undos(), CanRedo(), Undo_num_undos_since_last_save() != 0);
+
+    octave->blockSignals(true);
+    // The main bottom bar is constructed before root is allocated.
+    octave->setValue(root != NULL ? root->keyoct / 12 : 3);
+    octave->blockSignals(false);
+
     editlines->setValue(1);
     
     sps->setValue(scrolls_per_second);
@@ -185,15 +205,6 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
     // For now, I haven't tried any machine where smooth scrolling doesn't work better than non-smooth scrolling. Anyay, just hide the sps options for now.
     sps->hide();
     sps_label->hide();
-
-    // Adjust velocity slider widths
-    {
-      QFontMetrics fm(QApplication::font());
-      //QRect r =fm.boundingRect(SLIDERPAINTER_get_string(_painter));
-      int width = fm.boundingRect("Min. Vel: 100%").width()+20;
-      min_velocity_slider->setMinimumWidth(width);
-      velocity_slider->setMinimumWidth(width);
-    }
 
     // cpu / xruns
     {
@@ -263,20 +274,12 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
     }
 
     
-    octave_down_button->_show_popup_menu = [](){
-      S7CALL2(void_void,"FROM_C-show-bottom-bar-octave-down-popup-menu");
+    octave->_show_popup_menu = [](){
+      S7CALL2(void_void,"FROM_C-show-bottom-bar-octave-popup-menu");
     };
 
-    octave_up_button->_show_popup_menu = [](){
-      S7CALL2(void_void,"FROM_C-show-bottom-bar-octave-up-popup-menu");
-    };
-
-    undo_button->_show_popup_menu = [](){
-      S7CALL2(void_void,"FROM_C-show-bottom-bar-undo-popup-menu");
-    };
-    
-    redo_button->_show_popup_menu = [](){
-      S7CALL2(void_void,"FROM_C-show-bottom-bar-redo-popup-menu");
+    history->_show_popup_menu = [](){
+      S7CALL2(void_void,"FROM_C-show-bottom-bar-history-popup-menu");
     };
     
     drunk_velocity_onoff->_show_popup_menu = [](){
@@ -316,15 +319,13 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
       
   void remove_editor_elements(void){
 
-    velocity_slider->hide();
-    min_velocity_slider->hide();
+    velocity_controls->hide();
     drunk_velocity_onoff->hide();
     
     edit_onoff->hide();
     
     octave_label->hide();
-    octave_up_button->hide();
-    octave_down_button->hide();
+    octave->hide();
     
     lpb->hide();
     lpb_label->hide();
@@ -358,6 +359,16 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
   }
 
   void update_velocity_sliders(){
+    QFont slider_font = QApplication::font();
+    if (drunk_velocity) {
+      const int text_height = R_MAX(1, velocity_controls->height() / 2 - 4);
+      slider_font.setPixelSize(text_height);
+      while (QFontMetrics(slider_font).height() > text_height && slider_font.pixelSize() > 1)
+        slider_font.setPixelSize(slider_font.pixelSize() - 1);
+    }
+    min_velocity_slider->setFont(slider_font);
+    velocity_slider->setFont(slider_font);
+
     if(drunk_velocity==true){
 
       SLIDERPAINTER_set_string(velocity_slider->_painter, QString("Max. Vel: ") + QString::number(velocity_slider->value()*100/10000) + "%");
@@ -456,12 +467,14 @@ public slots:
     set_volume_slider_string();
   }
 
-  void on_octave_up_button_clicked(){
-    incKeyAdd(12);
+  void on_octave_valueChanged(int val){
+    if (root != NULL)
+      setKeyAdd(val * 12);
   }
 
-  void on_octave_down_button_clicked(){
-    incKeyAdd(-12);
+  void on_octave_editingFinished(){
+    octave->clearFocus();
+    set_editor_focus();
   }
 
   void on_editlines_valueChanged(int val){
@@ -505,12 +518,9 @@ public slots:
     update_velocity_sliders();
   }
 
-  void on_undo_button_clicked(){
-    Undo();
-  }
-
-  void on_redo_button_clicked(){
-    Redo();
+  void on_history_editingFinished(){
+    history->clearFocus();
+    set_editor_focus();
   }
 
   void on_edit_onoff_toggled(bool val){
@@ -583,8 +593,12 @@ extern "C"{
 
   void GFX_OS_UpdateKeyOctave(void){
     if(g_is_starting_up==false)
-      for(auto *bottom_bar_widget : g_bottom_bars)
-        bottom_bar_widget->octave_label->setText(QString("Oct.: ")+QString::number(root->keyoct/12,16));
+      for(auto *bottom_bar_widget : g_bottom_bars){
+        auto *octave = bottom_bar_widget->octave;
+        const bool was_blocked = octave->blockSignals(true);
+        octave->setValue(root->keyoct / 12);
+        octave->blockSignals(was_blocked);
+      }
   }
 
   void GFX_OS_update_bottombar(void){
@@ -595,10 +609,7 @@ extern "C"{
  
   void OS_GFX_NumUndosHaveChanged(int num_undos, bool redos_are_available, bool has_unsaved_undos){
     for(auto *bottom_bar_widget : g_bottom_bars){
-      bottom_bar_widget->num_undos_label->setText(QString::number(num_undos));
-      bottom_bar_widget->unsaved_undos->setText(has_unsaved_undos?"*":" ");
-      bottom_bar_widget->undo_button->setEnabled(num_undos>0);
-      bottom_bar_widget->redo_button->setEnabled(redos_are_available);
+      bottom_bar_widget->history->setHistoryState(num_undos, redos_are_available, has_unsaved_undos);
     }
   }
 

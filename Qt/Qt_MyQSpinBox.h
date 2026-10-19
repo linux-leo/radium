@@ -18,6 +18,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. */
 
 #include <QSpinBox>
 #include <QMouseEvent>
+#include <QPainter>
+#include <QStyleOptionSpinBox>
 
 #include "../audio/undo_audio_effect_proc.h"
 #include "../common/undo_patchvoice_proc.h"
@@ -31,6 +33,40 @@ extern void set_editor_focus(void);
 
   
 struct MyQSpinBox : public GL_PauseCaller, public QSpinBox{
+  bool _highlight_arrow_hover = false;
+
+  void setArrowHoverHighlight(bool enabled) {
+    _highlight_arrow_hover = enabled;
+    setAttribute(Qt::WA_Hover, enabled);
+    update();
+  }
+
+  void initStyleOption(QStyleOptionSpinBox *option) const override {
+    QSpinBox::initStyleOption(option);
+    // Keep the flat arrows borderless while pressed; Qt still handles stepping.
+    if (_highlight_arrow_hover && !hasFrame())
+      option->state &= ~QStyle::State_Sunken;
+  }
+
+  void paintEvent(QPaintEvent *event) override {
+    if (_highlight_arrow_hover && isEnabled()) {
+      QStyleOptionSpinBox option;
+      initStyleOption(&option);
+      const auto control = option.activeSubControls;
+      const bool up = control == QStyle::SC_SpinBoxUp;
+      const bool down = control == QStyle::SC_SpinBoxDown;
+      if ((option.state & QStyle::State_MouseOver) && (up || down)
+          && (option.stepEnabled & (up ? StepUpEnabled : StepDownEnabled))) {
+        QPainter painter(this);
+        // Match draw-button's 1.25 hover lightening in bin/scheme/gui.scm.
+        painter.fillRect(style()->subControlRect(QStyle::CC_SpinBox, &option,
+                                                up ? QStyle::SC_SpinBoxUp : QStyle::SC_SpinBoxDown, this),
+                         palette().color(QPalette::Window).lighter(125));
+      }
+    }
+    QSpinBox::paintEvent(event);
+  }
+
   bool _has_mouse;
   radium::GcHolder<struct Patch> _patch;
   int _effect_num;
@@ -171,4 +207,3 @@ struct MyQSpinBox : public GL_PauseCaller, public QSpinBox{
   }
 #endif
 };
-
