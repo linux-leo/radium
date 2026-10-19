@@ -4148,59 +4148,10 @@ int radium_main(const char *arg){
         QSplitterHandle *createHandle() override {
           struct Handle : public QSplitterHandle {
             using QSplitterHandle::QSplitterHandle;
-            bool _resizing = false;
-            int _drag_mouse_x = 0;
-            int _drag_pane_edge = 0;
 
             QSize sizeHint() const override {
               return property("sizingPlaceholder").toBool()
                 ? QSize(0, 0) : QSplitterHandle::sizeHint();
-            }
-
-            void resizeEvent(QResizeEvent *event) override {
-              if (_resizing)
-                return;
-              _resizing = true;
-              QSplitterHandle::resizeEvent(event);
-              if (property("sizingPlaceholder").toBool()) {
-                // Overlap adjacent panes instead of reserving layout space.
-                // At the window edge, half of this 16 px target is reachable.
-                if (width() < 16)
-                  setGeometry(x() - (16 - width()) / 2, y(), 16, height());
-                setContentsMargins(7, 0, 7, 0);
-                setAttribute(Qt::WA_MouseNoMask, true);
-                clearMask();
-              }
-              _resizing = false;
-            }
-
-            void mousePressEvent(QMouseEvent *event) override {
-              if (!property("sizingPlaceholder").toBool()) {
-                QSplitterHandle::mousePressEvent(event);
-                return;
-              }
-              if (event->button() != Qt::LeftButton)
-                return;
-              _drag_mouse_x = event->globalPosition().toPoint().x();
-              for (int i = 1; i < splitter()->count(); ++i)
-                if (splitter()->handle(i) == this)
-                  _drag_pane_edge = splitter()->widget(i - 1)->geometry().right() + 1;
-              event->accept();
-            }
-
-            void mouseMoveEvent(QMouseEvent *event) override {
-              if (!property("sizingPlaceholder").toBool()) {
-                QSplitterHandle::mouseMoveEvent(event);
-                return;
-              }
-              if (event->buttons() & Qt::LeftButton)
-                moveSplitter(_drag_pane_edge + event->globalPosition().toPoint().x() - _drag_mouse_x);
-              event->accept();
-            }
-
-            void paintEvent(QPaintEvent *event) override {
-              if (!property("sizingPlaceholder").toBool())
-                QSplitterHandle::paintEvent(event);
             }
           };
           return new Handle(orientation(), this);
