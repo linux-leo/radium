@@ -61,7 +61,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. */
 #include <QPalette>
 #include <QSet>
 #include <QPainter>
-#include <QPolygonF>
+#include <QPointF>
 #include <QPaintEvent>
 
 #include "../common/nsmtracker.h"
@@ -743,12 +743,15 @@ static void schedule_flush_pending_menu_callbacks(void)
 
   struct PopupSearchState
   {
-    QPointer<QMenu> root_menu;
-    QPointer<QLineEdit> lineedit;
-    QPointer<QWidgetAction> lineedit_action;
-    QHash<QMenu*, PopupSearchMenu> menus;
-    QSet<QMenu*> all_menus;
-    QString query;
+	  QPointer<QMenu> root_menu;
+	  QPointer<QLineEdit> lineedit;
+	  QPointer<QWidgetAction> lineedit_action;
+	  QHash<QMenu*, PopupSearchMenu> menus;
+	  QSet<QMenu*> all_menus;
+	  QString query;
+	  // Sub menus opened automatically to show the result of the search, in the order they
+	  // were opened (from the root menu and downwards).
+	  QVector<QPointer<QMenu>> auto_opened_menus;
   };
 
   static std::shared_ptr<PopupSearchState> g_popup_search_state;
@@ -780,6 +783,8 @@ static void schedule_flush_pending_menu_callbacks(void)
     QAction *best_action;
     int best_score;
   };
+
+static void schedule_auto_open_search_result_path(void);
 
   static void set_active_action_if_necessary(QMenu *menu, QAction *best_action, QAction *lineedit_action)
   {
@@ -920,6 +925,10 @@ static void schedule_flush_pending_menu_callbacks(void)
       lineedit->setText(state->query);
 
     lineedit->setCursorPosition(lineedit->text().size());
+
+	// Applied on the next event loop iteration, so the popup is visible and so that we never
+	// open (or close) a sub menu from within a key press event handler.
+	schedule_auto_open_search_result_path();
   }
 
   // Fully deactivate the main menu bars, including Qt's internal menu bar keyboard/popup state.
@@ -1557,7 +1566,7 @@ static void schedule_flush_pending_menu_callbacks(void)
     }
 
     // Qt paints the entries that open sub menus by itself (they are not widget actions),
-    // so draw the current-entry arrow on those here, matching the arrow that
+    // so draw the current-entry circle on those here, matching the circle that
     // FROM_C-create-menu-entry-widget draws for normal entries.
     void paintEvent(QPaintEvent *event) override
     {
@@ -1574,21 +1583,15 @@ static void schedule_flush_pending_menu_callbacks(void)
         return;
 
       const double fontheight = get_system_fontheight();
-      const double marker_width = R_MAX(3, qRound(fontheight*0.35));
-      const double marker_height = R_MAX(4, qRound(fontheight*0.45));
+      const double marker_radius = R_MAX(2, qRound(fontheight*0.2));
       const double marker_x = rect.left() + fontheight*0.55;
       const double marker_y = rect.center().y() + 0.5;
-
-      QPolygonF triangle;
-      triangle << QPointF(marker_x - marker_width/2.0, marker_y - marker_height/2.0)
-               << QPointF(marker_x - marker_width/2.0, marker_y + marker_height/2.0)
-               << QPointF(marker_x + marker_width/2.0, marker_y);
 
       QPainter painter(this);
       painter.setRenderHint(QPainter::Antialiasing, true);
       painter.setPen(Qt::NoPen);
       painter.setBrush(get_config_qcolor("menu_text"));
-      painter.drawPolygon(triangle);
+      painter.drawEllipse(QPointF(marker_x, marker_y), marker_radius, marker_radius);
     }
     
 
@@ -1908,6 +1911,116 @@ static void schedule_flush_pending_menu_callbacks(void)
 
 
   };
+
+// If a menu only has a single visible selectable entry, and that entry opens a sub menu,
+// open the sub menu. This is repeated down the menu hierarchy. The result is that when
+// searching for e.g. "Blowfish", the Project -> Demo Songs sub menus are opened
+// automatically so the matching entry becomes visible instead of just highlighting the
+// top-level Project menu.
+static void auto_open_search_result_path(void)
+{
+	PopupSearchState *state = g_popup_search_state.get();
+
+	if (state == NULL || state->root_menu.isNull() || state->lineedit_action.isNull())
+		return;
+
+	QVector<QMenu*> desired_path;
+
+	const radium::FuzzySearchQuery search(state->query);
+
+	if (!search.empty() && state->root_menu->isVisible())
+	{
+		QMenu *menu = state->root_menu.data();
+
+		while (true)
+		{
+			QAction *only_action = NULL;
+			int num_selectable_actions = 0;
+
+			for (QAction *action : menu->actions())
+			{
+				if (action == state->lineedit_action.data())
+					continue;
+
+				if (!action->isVisible() || action->isSeparator() || !action->isEnabled())
+					continue;
+
+				only_action = action;
+				num_selectable_actions++;
+			}
+
+			if (num_selectable_actions != 1 || only_action->menu() == NULL)
+				break;
+
+			QMenu *submenu = only_action->menu();
+
+			desired_path.push_back(submenu);
+			menu = submenu;
+		}
+	}
+
+	// Close sub menus that were opened by a previous search, but which are no longer part
+	// of the path to the current search result. Close the deepest menus first.
+	for (int i = state->auto_opened_menus.size()-1 ; i >= 0 ; i--)
+	{
+		QMenu *auto_opened_menu = state->auto_opened_menus[i].data();
+
+		if (auto_opened_menu == NULL || !desired_path.contains(auto_opened_menu))
+		{
+			if (auto_opened_menu != NULL)
+				auto_opened_menu->hide();
+
+			state->auto_opened_menus.removeAt(i);
+		}
+	}
+
+	if (state->root_menu.isNull() || !state->root_menu->isVisible())
+		return;
+
+	QMenu *parent_menu = state->root_menu.data();
+
+	for (QMenu *submenu : desired_path)
+	{
+		QAction *submenu_action = submenu->menuAction();
+
+		if (submenu_action == NULL || !submenu_action->isVisible() || !submenu_action->isEnabled())
+			break;
+
+		if (!submenu->isVisible())
+		{
+			MyQMenu *my_parent_menu = dynamic_cast<MyQMenu*>(parent_menu);
+
+			if (my_parent_menu == NULL)
+				break;
+
+			parent_menu->setActiveAction(submenu_action);
+			my_parent_menu->navigate_qt(Qt::Key_Right);
+
+			if (!submenu->isVisible())
+				break;
+
+			if (!state->auto_opened_menus.contains(submenu))
+				state->auto_opened_menus.push_back(submenu);
+		}
+
+		parent_menu = submenu;
+	}
+}
+
+static void schedule_auto_open_search_result_path(void)
+{
+	PopupSearchState *state = g_popup_search_state.get();
+
+	if (state == NULL || state->root_menu.isNull())
+		return;
+
+	QPointer<QMenu> root_menu = state->root_menu;
+
+	// The root menu is the context object, so the timer is canceled if the popup is deleted.
+	QTimer::singleShot(0, root_menu.data(), []{
+		auto_open_search_result_path();
+	});
+}
 
 
 }
