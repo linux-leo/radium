@@ -190,6 +190,8 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
 
     octave->setArrowHoverHighlight(true);
     editlines->setArrowHoverHighlight(true);
+    octave->setArrowFocusEnabled(false);
+    editlines->setArrowFocusEnabled(false);
     if (!g_is_starting_up)
       history->setHistoryState(Undo_num_undos(), CanRedo(), Undo_num_undos_since_last_save() != 0);
 
@@ -518,11 +520,6 @@ public slots:
     update_velocity_sliders();
   }
 
-  void on_history_editingFinished(){
-    history->clearFocus();
-    set_editor_focus();
-  }
-
   void on_edit_onoff_toggled(bool val){
     if(val!=ATOMIC_GET(root->editonoff))
       switchEditOnOff();
@@ -754,4 +751,3 @@ g_system_audio_instrument_widget = system_audio_instrument_widget;
 }
   
 */
-

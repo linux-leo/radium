@@ -17,6 +17,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. */
 #pragma once
 
 #include <QSpinBox>
+#include <QLineEdit>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QStyleOptionSpinBox>
@@ -33,6 +34,23 @@ extern void set_editor_focus(void);
 
   
 struct MyQSpinBox : public GL_PauseCaller, public QSpinBox{
+  bool _arrow_focus_enabled = true;
+
+  void setArrowFocusEnabled(bool enabled) {
+    _arrow_focus_enabled = enabled;
+    setFocusPolicy(enabled ? Qt::StrongFocus : Qt::TabFocus);
+    lineEdit()->installEventFilter(this);
+  }
+
+  bool eventFilter(QObject *watched, QEvent *event) override {
+    // TabFocus prevents the arrow buttons from taking keyboard focus. Allow
+    // explicit clicks in the number field to start editing as usual.
+    if (!_arrow_focus_enabled && watched == lineEdit()
+        && event->type() == QEvent::MouseButtonPress && !lineEdit()->isReadOnly())
+      setFocus(Qt::MouseFocusReason);
+    return QSpinBox::eventFilter(watched, event);
+  }
+
   bool _highlight_arrow_hover = false;
 
   void setArrowHoverHighlight(bool enabled) {
