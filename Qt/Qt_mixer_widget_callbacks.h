@@ -1072,8 +1072,6 @@ void MW_hide_non_instrument_widgets(void){
     w->hide();
   }else
     g_mixer_widget2->view->hide();
-  
-  g_mixer_widget2->bar_widget->hide();
 }
 
 void MW_show_non_instrument_widgets(void){
@@ -1082,8 +1080,6 @@ void MW_show_non_instrument_widgets(void){
     w->show();
   }else
     g_mixer_widget2->view->show();
-  
-  g_mixer_widget2->bar_widget->show();
 }
 
 dyn_t MW_get_mixer_strips_state(void){
