@@ -4269,16 +4269,13 @@ int radium_main(const char *arg){
         };
         auto *grow_widget = new Gakk;
         grow_widget->setSizePolicy(QSizePolicy::Minimum,QSizePolicy::MinimumExpanding);
+        grow_widget->setFixedWidth(0);
         xsplitter->addWidget(grow_widget);
-        // Start without a trailing gap, but let the user drag this pane open.
-        // A zero-width size hint retains Qt's overlapping handle hit area.
-        const int placeholder_index = xsplitter->indexOf(grow_widget);
-        xsplitter->setStretchFactor(placeholder_index, 0);
-        auto sizes = xsplitter->sizes();
-        sizes[placeholder_index] = 0;
-        xsplitter->setSizes(sizes);
-        auto *placeholder_handle = xsplitter->handle(placeholder_index);
+        // This sizing placeholder is not a pane: reserve no divider at the
+        // window edge, while keeping its vertical size policy active.
+        auto *placeholder_handle = xsplitter->handle(xsplitter->indexOf(grow_widget));
         placeholder_handle->setProperty("sizingPlaceholder", true);
+        placeholder_handle->setFixedWidth(0);
         placeholder_handle->updateGeometry();
       }
       
