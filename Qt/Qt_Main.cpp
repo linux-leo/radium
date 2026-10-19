@@ -4145,6 +4145,18 @@ int radium_main(const char *arg){
     {
 
       struct XSplitter : public radium::Splitter {
+        QSplitterHandle *createHandle() override {
+          struct Handle : public QSplitterHandle {
+            using QSplitterHandle::QSplitterHandle;
+
+            QSize sizeHint() const override {
+              return property("sizingPlaceholder").toBool()
+                ? QSize(0, 0) : QSplitterHandle::sizeHint();
+            }
+          };
+          return new Handle(orientation(), this);
+        }
+
       public:
         
         bool _strip_on_left_side;
@@ -4189,7 +4201,6 @@ int radium_main(const char *arg){
       XSplitter *xsplitter = new XSplitter(showMixerStripOnLeftSide());
       xsplitter->setChildrenCollapsible(false);
       xsplitter->setHandleWidth(2);
-                                
       editor->xsplitter = xsplitter;
 
       xsplitter->setOpaqueResize(true);
@@ -4258,7 +4269,14 @@ int radium_main(const char *arg){
         };
         auto *grow_widget = new Gakk;
         grow_widget->setSizePolicy(QSizePolicy::Minimum,QSizePolicy::MinimumExpanding);
+        grow_widget->setFixedWidth(0);
         xsplitter->addWidget(grow_widget);
+        // This sizing placeholder is not a pane: reserve no divider at the
+        // window edge, while keeping its vertical size policy active.
+        auto *placeholder_handle = xsplitter->handle(xsplitter->indexOf(grow_widget));
+        placeholder_handle->setProperty("sizingPlaceholder", true);
+        placeholder_handle->setFixedWidth(0);
+        placeholder_handle->updateGeometry();
       }
       
       
