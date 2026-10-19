@@ -4145,17 +4145,6 @@ int radium_main(const char *arg){
     {
 
       struct XSplitter : public radium::Splitter {
-        QSplitterHandle *createHandle() override {
-          struct Handle : public QSplitterHandle {
-            using QSplitterHandle::QSplitterHandle;
-
-            QSize sizeHint() const override {
-              return property("sizingPlaceholder").toBool()
-                ? QSize(0, 0) : QSplitterHandle::sizeHint();
-            }
-          };
-          return new Handle(orientation(), this);
-        }
 
       public:
         
@@ -4242,6 +4231,18 @@ int radium_main(const char *arg){
       }
 
       radium::Splitter *ysplitter = dynamic_cast<radium::Splitter*>(API_get_main_ysplitter()); //new radium::Splitter(Qt::Vertical, main_window);
+      // A fixed-width upper pane must not cap the width of the lower tabs.
+      // QSplitter propagates child maximum widths; a layout container keeps
+      // that constraint local and leaves unused upper space on the right.
+      auto *upper_container = new QWidget;
+      auto *upper_layout = new QHBoxLayout(upper_container);
+      upper_layout->setContentsMargins(0, 0, 0, 0);
+      upper_layout->setSpacing(0);
+      ysplitter->replaceWidget(ysplitter->indexOf(xsplitter), upper_container);
+      upper_layout->addWidget(xsplitter, 1);
+      upper_layout->addStretch(0);
+      xsplitter->show();
+
       ysplitter->setHandleWidth(1);
       //ysplitter->setSizePolicy(QSizePolicy::MinimumExpanding,QSizePolicy::MinimumExpanding); // NOTE: Causes main window height to grow and grow when adding/removing widget. Strange.
       
@@ -4260,26 +4261,6 @@ int radium_main(const char *arg){
       if(!xsplitter->_strip_on_left_side)
         xsplitter->add_mixer_strip();
 
-      // To fix y-splitter not growing horizontally, causing the lower tabs to be minimized when neither the editor nor mixer were visible.
-      {
-        struct Gakk : public QWidget{
-          QSize 	sizeHint() const override{
-            return QSize(0,0);
-          }
-        };
-        auto *grow_widget = new Gakk;
-        grow_widget->setSizePolicy(QSizePolicy::Minimum,QSizePolicy::MinimumExpanding);
-        grow_widget->setFixedWidth(0);
-        xsplitter->addWidget(grow_widget);
-        // This sizing placeholder is not a pane: reserve no divider at the
-        // window edge, while keeping its vertical size policy active.
-        auto *placeholder_handle = xsplitter->handle(xsplitter->indexOf(grow_widget));
-        placeholder_handle->setProperty("sizingPlaceholder", true);
-        placeholder_handle->setFixedWidth(0);
-        placeholder_handle->updateGeometry();
-      }
-      
-      
       //QWidget *gakk = new MixerWidget(mixerwidgetandmixerstrip);
       //g_mixerstriplayout->addWidget(gakk);
       
