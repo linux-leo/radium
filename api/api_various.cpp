@@ -810,25 +810,9 @@ void switchWindowConfiguration(void){
 
   // From 2 to 3
   if(GFX_EditorIsVisible()==true && GFX_InstrumentWindowIsVisible()==true && GFX_MixerIsVisible()==false){
-    EditorWidget *editor = static_cast<EditorWidget*>(root->song->tracker_windows->os_visual.widget);
-    auto *splitter = editor->xsplitter;
-
-    int editor_index = splitter->indexOf(editor->editor_layout_widget);
-    int mixer_index = splitter->indexOf(get_qwidget(g_mixer_widget));
-
-    QList<int> sizes = splitter->sizes();
-
-    if (editor_index != -1 && mixer_index != -1) {
-      sizes[mixer_index] += sizes[editor_index];
-      sizes[editor_index] = 0;
-    }
-
     GFX_HideEditor();
     GFX_ShowMixer();
-
-    if (editor_index != -1 && mixer_index != -1)
-      splitter->setSizes(sizes);
-
+    //GFX_SetMinimalInstrumentWindow();
     return;
   }
 
