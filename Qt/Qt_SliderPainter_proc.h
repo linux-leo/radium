@@ -32,6 +32,7 @@ void SLIDERPAINTER_became_visible(SliderPainter *painter);
 void SLIDERPAINTER_became_invisible(SliderPainter *painter);
 
 void SLIDERPAINTER_paint(SliderPainter *painter, QPainter *p);
+void SLIDERPAINTER_paint_indicators(SliderPainter *painter, QPainter *p);
 
 void SLIDERPAINTER_set_num_channels(SliderPainter *painter, int num_channels);
 

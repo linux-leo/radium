@@ -1900,7 +1900,7 @@ $(T)Qt_PopupMenu.o:  $(BUILD_DEPENDENCIES) $(P)Qt_PopupMenu.cpp $(P)mQt_PopupMen
 $(P)mQt_PopupMenu.cpp: $(P)Qt_PopupMenu.cpp $(BUILD_DEPENDENCIES)
 	$(MOC) $(P)Qt_PopupMenu.cpp -DUSE_QT_MENU >$(P)mQt_PopupMenu.cpp
 
-$(T)Qt_MainWindow.o:  $(BUILD_DEPENDENCIES) $(P)Qt_MainWindow.cpp $(P)mQt_bottom_bar_widget_callbacks.h $(P)mQt_upperleft_widget_callbacks.h $(P)Rational.h $(P)lzqlineedit.h $(P)helpers.h audio/CpuUsage.hpp Qt/EditorWidget.h  Qt/FileRequester.hpp Qt/Qt_MyQCheckBox.h Qt/Qt_MyQLabel.h
+$(T)Qt_MainWindow.o:  $(BUILD_DEPENDENCIES) $(P)Qt_MainWindow.cpp $(P)mQt_bottom_bar_widget_callbacks.h $(P)mQt_upperleft_widget_callbacks.h $(P)Rational.h $(P)lzqlineedit.h $(P)helpers.h audio/CpuUsage.hpp Qt/EditorWidget.h  Qt/FileRequester.hpp Qt/Qt_MyQCheckBox.h Qt/Qt_MyQLabel.h Qt/Qt_VerticalLineEdit.h Qt/Qt_VelocitySpinBox.h Qt/Qt_VolumeSpinBox.h
 	$(CCC2) $(P)Qt_MainWindow.cpp $(QTOPT)
 
 $(T)Qt_Time.o:  $(BUILD_DEPENDENCIES) $(P)Qt_Time.cpp $(QT_PCH)
@@ -3110,6 +3110,5 @@ bin/scheme/api_protos.scm: bin/protos.conf bin/protoconfparser.py
 #bin/zita_rev_ladspa.so: audio/zita_rev.dsp
 #	cd audio && $(FAUST) $(FAUST_BIN_OPTS) -a ladspa.cpp -cn zita_rev_radium zita_rev.dsp >zita_rev_ladspa.cpp
 #	$(CCC2) -I /usr/share/faust/ audio/zita_rev_ladspa.cpp -shared -o bin/zita_rev_ladspa.so $(FPIC) 
-
 
 

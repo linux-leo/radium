@@ -29,8 +29,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. */
 
 #include "../Qt/Qt_MyQButton.h"
 #include "../Qt/Qt_MyQSpinBox.h"
+#include "Qt_VerticalLineEdit.h"
 #include <QTimer>
 #include <QToolTip>
+#include <QStackedLayout>
+#include <QButtonGroup>
+#include <QSignalBlocker>
 
 #ifdef USE_QT5
 #include <QStyleFactory>
@@ -90,11 +94,7 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
     if (this->click_onoff->isChecked() != clickonoff)
       this->click_onoff->setChecked(clickonoff);
     
-    if (this->play_cursor_onoff->isChecked() != ATOMIC_GET(root->play_cursor_onoff))
-      this->play_cursor_onoff->setChecked(ATOMIC_GET(root->play_cursor_onoff));
-    
-    if (this->editor_follows_play_cursor_onoff->isChecked() != ATOMIC_GET(root->editor_follows_play_cursor_onoff))
-      this->editor_follows_play_cursor_onoff->setChecked(ATOMIC_GET(root->editor_follows_play_cursor_onoff));
+    update_playback_mode();
 
     if (g_system_out_plugin != NULL){
       const SoundPluginType *type = g_system_out_plugin->type;
@@ -166,28 +166,111 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
         
     setMinimumHeight(fm.height()*3/2);
     setMaximumHeight(fm.height()*3/2);
+    for (auto *label : {signature_label, lpb_label, bpm_label, octave_label, volume_label})
+      label->setVerticalText();
     // A control-relative gap, fixed across window resizes. Internal group
     // layouts retain their existing spacing and have no added margins.
     horizontalLayout_2->setSpacing(qRound(maximumHeight() / 4.0));
+    timing_group_layout->setSpacing(horizontalLayout_2->spacing());
+    for (auto *layout : {horizontalLayout_8, horizontalLayout_3,
+                         horizontalLayout_4, octave_group_layout, editlines_group_layout})
+      layout->setSpacing(qMax(2, qRound(maximumHeight() / 12.0)));
     horizontalLayout_2->setStretchFactor(overview_group, 1);
-    cpu_group_layout->setContentsMargins(horizontalLayout_2->spacing(), 0, 0, 0);
+    // Share one stable area beside the menu for monitoring and hover help.
+    horizontalLayout_6->removeWidget(status_label);
+    horizontalLayout_2->removeWidget(cpu_group);
+    auto *status_area = new QWidget(widget_2);
+    _status_stack = new QStackedLayout(status_area);
+    _status_stack->setContentsMargins(0, 0, 0, 0);
+    _status_stack->addWidget(cpu_group);
+    _status_stack->addWidget(status_label);
+    horizontalLayout_6->insertWidget(0, status_area, 1);
+    cpu_group_layout->setAlignment(Qt::AlignLeft);
+    for (auto *toggle : {edit_onoff, drunk_velocity_onoff}) {
+      toggle->vertical_text = toggle->text();
+      toggle->_unscaled_vertical_text = true;
+      toggle->setText("");
+      toggle->_show_enabled_marker = false;
+      toggle->_always_gradient_when_checked = true;
+      toggle->setFixedWidth(fm.height());
+      toggle->setMinimumHeight(0);
+      toggle->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Ignored);
+      toggle->setFocusPolicy(Qt::NoFocus);
+    }
+    edit_onoff->setAccessibleName("Edit mode");
+    edit_onoff->setToolTip("Toggle Edit mode: record played notes into the editor. Right-click for options.");
+    drunk_velocity_onoff->setAccessibleName("Drunk velocity");
+    drunk_velocity_onoff->setToolTip("Toggle Drunk velocity: vary input velocity between Min and Max. Right-click for options.");
+    for (auto *toggle : {edit_onoff, drunk_velocity_onoff}) {
+      toggle->_hovered_callback = [toggle](bool hovered) {
+        GFX_SetStatusBar(hovered ? toggle->toolTip().toUtf8().constData() : "");
+      };
+    }
+    horizontalLayout_2->removeWidget(editlines_group);
+    horizontalLayout_2->insertWidget(horizontalLayout_2->indexOf(octave_group) + 1,
+                                     editlines_group);
+    auto *volume_group = new QWidget(widget);
+    auto *volume_layout = new QHBoxLayout(volume_group);
+    volume_layout->setContentsMargins(0, 0, 0, 0);
+    volume_layout->setSpacing(horizontalLayout_8->spacing());
+    volume_layout->addWidget(volume_label);
+    volume_layout->addWidget(system_volume_slider);
+    horizontalLayout_2->addWidget(volume_group);
+
+    _playback_modes = new QButtonGroup(this);
+    _scroll_mode = new MyQCheckBox("S", editing_group);
+    _scroll_mode->setObjectName("scroll_mode");
+    editing_group_layout->insertWidget(0, _scroll_mode);
+    play_cursor_onoff->setText("C");
+    editor_follows_play_cursor_onoff->setText("F");
+    _scroll_mode->setToolTip("Scroll the editor during playback (default).");
+    play_cursor_onoff->setToolTip("Show the play cursor during playback.");
+    editor_follows_play_cursor_onoff->setToolTip("Show the play cursor and follow it during playback.");
+    int mode = 0;
+    for (auto *button : {_scroll_mode, play_cursor_onoff, editor_follows_play_cursor_onoff}) {
+      _playback_modes->addButton(button, mode++);
+      button->_show_enabled_marker = false;
+      button->_always_gradient_when_checked = true;
+      button->setFixedSize(maximumHeight(), maximumHeight());
+      button->setFocusPolicy(Qt::NoFocus);
+      button->setAccessibleName(button->toolTip());
+      button->_hovered_callback = [button](bool hovered) {
+        GFX_SetStatusBar(hovered ? button->toolTip().toUtf8().constData() : "");
+      };
+    }
+    click_onoff->_show_enabled_marker = false;
+    click_onoff->_always_gradient_when_checked = true;
+    click_onoff->setFixedSize(maximumHeight(), maximumHeight());
+    click_onoff->setFocusPolicy(Qt::NoFocus);
+    click_onoff->_hovered_callback = [this](bool hovered) {
+      GFX_SetStatusBar(hovered ? click_onoff->toolTip().toUtf8().constData() : "");
+    };
+    editing_group_layout->insertSpacing(3, horizontalLayout_8->spacing());
+    connect(_playback_modes, &QButtonGroup::idToggled, this, [this](int mode, bool checked) {
+      if (!checked || _initing)
+        return;
+      enablePlayCursor(mode != 0);
+      enableEditorFollowsPlayCursor(mode == 2);
+    });
+    update_playback_mode();
     update_timing_group_visibility();
     //frame->setMinimumHeight(fm.height()*3/2);
     //frame->setMaximumHeight(fm.height()*3/2);
 
-    velocity_controls->setFixedSize(fm.horizontalAdvance("Max. Vel: 100%") + 20,
-                                    maximumHeight());
-    for (auto *slider : {min_velocity_slider, velocity_slider}) {
-      // These two sliders share the bar height; skip MyQSlider's normal
-      // minimum-height initialization on first paint.
-      slider->_minimum_size_set = true;
-      slider->setMinimumHeight(0);
-      slider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
+    velocity_layout->setSpacing(horizontalLayout_2->spacing());
+    for (auto *spinbox : {min_velocity, velocity}) {
+      spinbox->setMinimumHeight(0);
+      spinbox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Ignored);
+      spinbox->setFixedWidth(history->sizeHint().width());
     }
+    history->installEventFilter(this);
+    velocity_group_layout->setSpacing(horizontalLayout_8->spacing());
+    min_velocity->setAccessibleName("Minimum velocity (%)");
+    min_velocity->setToolTip("Minimum input velocity (%). Click to edit; drag horizontally to adjust.");
 
-    min_velocity_slider->setValue(4000);
-    velocity_slider->setValue(8000);
-    update_velocity_sliders();
+    min_velocity->setValue(4000);
+    velocity->setValue(8000);
+    update_velocity_controls();
 
     drunk_velocity_onoff->setChecked(drunk_velocity);
 
@@ -305,23 +388,67 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
     play_cursor_onoff->_show_popup_menu = [](){
       S7CALL2(void_void,"FROM_C-show-bottom-bar-switch-play-cursor-popup-menu");
     };
+    _scroll_mode->_show_popup_menu = play_cursor_onoff->_show_popup_menu;
 
     editor_follows_play_cursor_onoff->_show_popup_menu = [](){
       S7CALL2(void_void,"FROM_C-show-bottom-bar-switch-editor-follows-play-cursor-popup-menu");
     };
 
-    adjustWidthToFitText(signature, "16/16");
-    adjustWidthToFitText(lpb, "99");
-    adjustWidthToFitText(bpm, "999");
-    for (auto *spinbox : {octave, editlines}) {
+    const int value_width = fm.height() + 4;
+    signature->setFixedWidth(value_width);
+    signature->setMinimumHeight(0);
+    signature->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Ignored);
+    new VerticalLineEdit(signature);
+    for (auto *spinbox : {lpb, bpm, octave, editlines}) {
+      auto *vertical_edit = new VerticalLineEdit(spinbox->findChild<QLineEdit *>());
       QStyleOptionSpinBox option;
       spinbox->initStyleOption(&option);
       const QRect value_rect = spinbox->style()->subControlRect(QStyle::CC_SpinBox, &option,
                                                                QStyle::SC_SpinBoxEditField, spinbox);
-      // Match LPB's value width while retaining the native arrow hit area.
-      spinbox->setFixedWidth(lpb->width() + spinbox->width() - value_rect.width());
+      // Match the visible text areas; reserve arrow space only where needed.
+      spinbox->setFixedWidth(value_width + spinbox->width() - value_rect.width());
+      spinbox->setMinimumHeight(0);
+      spinbox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Ignored);
+      if (spinbox == bpm) {
+        vertical_edit->setHorizontalAbove(999, bpm);
+        // QSpinBox suppresses its editor's textChanged when setValue is used.
+        connect(bpm, qOverload<int>(&QSpinBox::valueChanged), vertical_edit,
+                [vertical_edit](int){ vertical_edit->refreshPresentation(); });
+      }
     }
-    system_volume_slider->setMinimumWidth(120 * g_gfx_scale);
+    system_volume_slider->setMinimumHeight(0);
+    system_volume_slider->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Ignored);
+    // Reserve space for signed dB values and the MIDI-learn marker once.
+    QStyleOptionSpinBox volume_option;
+    system_volume_slider->initStyleOption(&volume_option);
+    const QRect volume_input = system_volume_slider->style()->subControlRect(
+      QStyle::CC_SpinBox, &volume_option, QStyle::SC_SpinBoxEditField, system_volume_slider);
+    system_volume_slider->setFixedWidth(qMax(history->sizeHint().width() * 3 / 2,
+      fm.horizontalAdvance("*-40.0") + 12 + system_volume_slider->width() - volume_input.width()));
+  }
+
+  QStackedLayout *_status_stack = nullptr;
+  QButtonGroup *_playback_modes = nullptr;
+  MyQCheckBox *_scroll_mode = nullptr;
+
+  void update_playback_mode() {
+    const int mode = root && ATOMIC_GET(root->play_cursor_onoff)
+      ? (ATOMIC_GET(root->editor_follows_play_cursor_onoff) ? 2 : 1) : 0;
+    const QSignalBlocker blocker(_playback_modes);
+    _playback_modes->button(mode)->setChecked(true);
+  }
+
+  void set_status_text(const QString &text) {
+    status_label->setText(text);
+    _status_stack->setCurrentWidget(text.isEmpty() ? cpu_group : status_label);
+  }
+
+  bool eventFilter(QObject *watched, QEvent *event) override {
+    if (watched == history && event->type() == QEvent::Resize) {
+      min_velocity->setFixedWidth(history->width());
+      velocity->setFixedWidth(history->width());
+    }
+    return QWidget::eventFilter(watched, event);
   }
 
   ~Bottom_bar_widget(){
@@ -334,10 +461,6 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
   MyQButton *_hamburger_button = NULL;
       
   void update_timing_group_visibility() {
-    const bool separate_signature_and_lpb = !SignatureWidget->isHidden()
-                                           && !LPBWidget->isHidden() && !lpb->isHidden();
-    LPBWidget->setContentsMargins(separate_signature_and_lpb ? horizontalLayout_2->spacing() : 0,
-                                 0, 0, 0);
     timing_group->setVisible(!SignatureWidget->isHidden()
                              || (!LPBWidget->isHidden() && !lpb->isHidden())
                              || !BPMWidget->isHidden());
@@ -354,6 +477,7 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
     lpb->hide();
     lpb_label->hide();
 
+    _scroll_mode->hide();
     play_cursor_onoff->hide();
     editor_follows_play_cursor_onoff->hide();
 
@@ -379,41 +503,21 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
     lpb->setValue(root->lpb);
     bpm->setValue(root->tempo);
     editlines->setValue(getNoteScrollLength());
-    editor_follows_play_cursor_onoff->setVisible(ATOMIC_GET(root->play_cursor_onoff));
+    update_playback_mode();
   }
 
-  void update_velocity_sliders(){
-    QFont slider_font = QApplication::font();
-    if (drunk_velocity) {
-      const int text_height = R_MAX(1, velocity_controls->height() / 2 - 4);
-      slider_font.setPixelSize(text_height);
-      while (QFontMetrics(slider_font).height() > text_height && slider_font.pixelSize() > 1)
-        slider_font.setPixelSize(slider_font.pixelSize() - 1);
-    }
-    min_velocity_slider->setFont(slider_font);
-    velocity_slider->setFont(slider_font);
+  void update_velocity_controls(){
+    velocity->setToolTip(drunk_velocity ? "Maximum input velocity (%)" : "Input velocity (%)");
+    velocity->setAccessibleName(velocity->toolTip());
+    velocity->setToolTip(velocity->toolTip() + ". Click to edit; drag horizontally to adjust.");
+    min_velocity->setVisible(drunk_velocity);
 
-    if(drunk_velocity==true){
-
-      SLIDERPAINTER_set_string(velocity_slider->_painter, QString("Max. Vel: ") + QString::number(velocity_slider->value()*100/10000) + "%");
-      //min_velocity_slider->setEnabled(true);
-      min_velocity_slider->show();
-      SLIDERPAINTER_set_string(min_velocity_slider->_painter, QString("Min. Vel: ") + QString::number(min_velocity_slider->value()*100/10000) + "%");
-
-    }else{
-
-      SLIDERPAINTER_set_string(velocity_slider->_painter, QString("Vel: ") + QString::number(velocity_slider->value()*100/10000) + "%");
-      //min_velocity_slider->setEnabled(false);
-      min_velocity_slider->hide();
-
-    }
-
-    min_velocity_slider->setMaximum(velocity_slider->value());
+    min_velocity->setMaximum(velocity->value());
 
     if(drunk_velocity==true)
-      velocity_slider->setMinimum(min_velocity_slider->value());
+      velocity->setMinimum(min_velocity->value());
     else
-      velocity_slider->setMinimum(0);
+      velocity->setMinimum(0);
   }
 
   void set_volume_slider_string(void){
@@ -422,12 +526,8 @@ class Bottom_bar_widget : public QWidget, public Ui::Bottom_bar_widget {
       
       int effect_num = type->num_effects+EFFNUM_INPUT_VOLUME;
       
-      char buf[64]={0};
-      PLUGIN_get_display_value_string(g_system_out_plugin, effect_num, buf, 64);
-      
-      QString p = PLUGIN_has_midi_learn(g_system_out_plugin, effect_num) ? "*" : "";
-      
-      SLIDERPAINTER_set_string(system_volume_slider->_painter, p + buf);
+      system_volume_slider->setPrefix(
+        PLUGIN_has_midi_learn(g_system_out_plugin, effect_num) ? "*" : "");
     }
   }
 
@@ -524,22 +624,22 @@ public slots:
       return;
     
     drunk_velocity = val;
-    update_velocity_sliders();
-    velocity_slider->update();
+    update_velocity_controls();
+    velocity->update();
   }
 
-  void on_min_velocity_slider_valueChanged(int val){
+  void on_min_velocity_valueChanged(int val){
     if(_initing==true)
       return;
     root->min_standardvel = val*MAX_VELOCITY / 10000;
-    update_velocity_sliders();
+    update_velocity_controls();
   }
 
-  void on_velocity_slider_valueChanged(int val){
+  void on_velocity_valueChanged(int val){
     if(_initing==true)
       return;
     root->standardvel = val*MAX_VELOCITY / 10000;
-    update_velocity_sliders();
+    update_velocity_controls();
   }
 
   void on_edit_onoff_toggled(bool val){
@@ -551,14 +651,7 @@ public slots:
     enableMetronome(val);
   }
 
-  void on_play_cursor_onoff_toggled(bool val){
-    enablePlayCursor(val);
-    editor_follows_play_cursor_onoff->setVisible(val);
-  }
 
-  void on_editor_follows_play_cursor_onoff_toggled(bool val){
-    enableEditorFollowsPlayCursor(val);
-  }
 };
 
 extern "C"{
@@ -689,8 +782,8 @@ bool EDITOR_switch_drunk_velocity(void){
   
   for(auto *bottom_bar_widget : g_bottom_bars){
     bottom_bar_widget->_initing = true;
-    bottom_bar_widget->update_velocity_sliders();
-    bottom_bar_widget->velocity_slider->update();
+    bottom_bar_widget->update_velocity_controls();
+    bottom_bar_widget->velocity->update();
     bottom_bar_widget->drunk_velocity_onoff->setChecked(drunk_velocity);
     bottom_bar_widget->_initing = false;
   }

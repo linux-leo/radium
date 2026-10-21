@@ -693,19 +693,20 @@ void showHideEditWidget(void){
 void hideUpperPartOfMainWindow(void){
   struct Tracker_Windows *window = root->song->tracker_windows;
   EditorWidget *editor = static_cast<EditorWidget*>(window->os_visual.widget);
-  editor->xsplitter->hide();
+  // Hide the whole upper pane, including its width-isolating layout container.
+  editor->xsplitter->parentWidget()->hide();
 }
 
 void showUpperPartOfMainWindow(void){
   struct Tracker_Windows *window = root->song->tracker_windows;
   EditorWidget *editor = static_cast<EditorWidget*>(window->os_visual.widget);
-  editor->xsplitter->show();
+  editor->xsplitter->parentWidget()->show();
 }
 
 bool upperPartOfMainWindowIsVisible(void){
   struct Tracker_Windows *window = root->song->tracker_windows;
   EditorWidget *editor = static_cast<EditorWidget*>(window->os_visual.widget);
-  return editor->xsplitter->isVisible();
+  return editor->xsplitter->parentWidget()->isVisible();
 }
 
 void showHideUpperPartOfMainWindow(void){

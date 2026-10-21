@@ -325,7 +325,7 @@
              <number>0</number>
             </property>
             <item>
-             <layout class="QHBoxLayout" name="horizontalLayout_6" stretch="1,1">
+             <layout class="QHBoxLayout" name="horizontalLayout_6" stretch="1,0,0">
               <property name="spacing">
                <number>0</number>
               </property>
@@ -352,28 +352,15 @@
                </widget>
               </item>
               <item>
-               <widget class="QSlider" name="system_volume_slider">
-                <property name="sizePolicy">
-                 <sizepolicy hsizetype="Ignored" vsizetype="MinimumExpanding">
-                  <horstretch>0</horstretch>
-                  <verstretch>0</verstretch>
-                 </sizepolicy>
-                </property>
-                <property name="minimumSize">
-                 <size>
-                  <width>120</width>
-                  <height>0</height>
-                 </size>
-                </property>
-                <property name="toolTip">
-                 <string>System Out Level.</string>
-                </property>
-                <property name="maximum">
-                 <number>10000</number>
-                </property>
-                <property name="orientation">
-                 <enum>Qt::Orientation::Horizontal</enum>
-                </property>
+               <widget class="QLabel" name="volume_label">
+                <property name="text"><string>Vol</string></property>
+                <property name="toolTip"><string>System volume (dB)</string></property>
+               </widget>
+              </item>
+              <item>
+               <widget class="VolumeSpinBox" name="system_volume_slider">
+                <property name="maximum"><number>10000</number></property>
+                <property name="toolTip"><string>System volume (dB). Click to edit; drag horizontally to adjust. Right-click for MIDI learn and automation options.</string></property>
                </widget>
               </item>
              </layout>
@@ -441,7 +428,7 @@
                </sizepolicy>
               </property>
               <property name="text">
-               <string>Sign.</string>
+               <string>Sig</string>
               </property>
              </widget>
             </item>
@@ -609,7 +596,7 @@
                <number>1</number>
               </property>
               <property name="maximum">
-               <number>999</number>
+               <number>999999</number>
               </property>
              </widget>
             </item>
@@ -655,7 +642,7 @@
             <string>Input octave for lowest octave (Z-M on the keyboard).</string>
            </property>
            <property name="text">
-            <string>Oct.</string>
+            <string>Oct</string>
            </property>
           </widget>
          </item>
@@ -716,41 +703,23 @@
          </property>
          <item>
           <widget class="QCheckBox" name="drunk_velocity_onoff">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Fixed" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>16777215</width>
-             <height>5134134</height>
-            </size>
+           <property name="text">
+            <string>Vel</string>
            </property>
            <property name="toolTip">
-            <string>Drunk velocity: Inserted notes will be given a velocity between min vel and max vel using a random walk algorithm.</string>
-           </property>
-           <property name="text">
-            <string>DV</string>
-           </property>
-           <property name="checkable">
-            <bool>true</bool>
-           </property>
-           <property name="checked">
-            <bool>true</bool>
+            <string>Input velocity (%). With DV enabled, minimum and maximum are shown from left to right.</string>
            </property>
           </widget>
          </item>
          <item>
           <widget class="QWidget" name="velocity_controls" native="true">
            <property name="sizePolicy">
-            <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+            <sizepolicy hsizetype="Maximum" vsizetype="Ignored">
              <horstretch>0</horstretch>
              <verstretch>0</verstretch>
             </sizepolicy>
            </property>
-           <layout class="QVBoxLayout" name="velocity_layout">
+           <layout class="QHBoxLayout" name="velocity_layout">
             <property name="spacing">
              <number>0</number>
             </property>
@@ -767,7 +736,7 @@
              <number>0</number>
             </property>
             <item>
-             <widget class="QSlider" name="min_velocity_slider">
+             <widget class="VelocitySpinBox" name="min_velocity">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
                 <horstretch>0</horstretch>
@@ -783,13 +752,10 @@
               <property name="value">
                <number>4000</number>
               </property>
-              <property name="orientation">
-               <enum>Qt::Orientation::Horizontal</enum>
-              </property>
              </widget>
             </item>
             <item>
-             <widget class="QSlider" name="velocity_slider">
+             <widget class="VelocitySpinBox" name="velocity">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
                 <horstretch>0</horstretch>
@@ -797,13 +763,10 @@
                </sizepolicy>
               </property>
               <property name="toolTip">
-               <string>Standard velocity</string>
+               <string>Input velocity (%)</string>
               </property>
               <property name="maximum">
                <number>10000</number>
-              </property>
-              <property name="orientation">
-               <enum>Qt::Orientation::Horizontal</enum>
               </property>
              </widget>
             </item>
@@ -856,31 +819,6 @@
          <property name="bottomMargin">
           <number>0</number>
          </property>
-         <item>
-          <widget class="QCheckBox" name="edit_onoff">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>16777215</width>
-             <height>16777215</height>
-            </size>
-           </property>
-           <property name="toolTip">
-            <string>Edit mode: When on, notes played on the keyboard or from midi are recorded into the editor, when off, notes are played back, but not inserted into the editor.</string>
-           </property>
-           <property name="text">
-            <string>Edit</string>
-           </property>
-           <property name="checkable">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
          <item>
           <widget class="QCheckBox" name="play_cursor_onoff">
            <property name="sizePolicy">
@@ -993,7 +931,7 @@
           <number>0</number>
          </property>
          <item>
-          <widget class="QLabel" name="editlines_label">
+          <widget class="QCheckBox" name="edit_onoff">
            <property name="sizePolicy">
             <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
              <horstretch>0</horstretch>
@@ -1144,6 +1082,16 @@
   </layout>
  </widget>
  <customwidgets>
+  <customwidget>
+   <class>VolumeSpinBox</class>
+   <extends>QSpinBox</extends>
+   <header>Qt_VolumeSpinBox.h</header>
+  </customwidget>
+  <customwidget>
+   <class>VelocitySpinBox</class>
+   <extends>QSpinBox</extends>
+   <header>Qt_VelocitySpinBox.h</header>
+  </customwidget>
   <customwidget>
    <class>HistorySpinBox</class>
    <extends>QSpinBox</extends>

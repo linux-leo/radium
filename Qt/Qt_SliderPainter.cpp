@@ -607,6 +607,11 @@ void SLIDERPAINTER_paint(SliderPainter *painter, QPainter *p){
   painter->paint(p);
 }
 
+void SLIDERPAINTER_paint_indicators(SliderPainter *painter, QPainter *p){
+  painter->paint_automation_or_peaks(p, false);
+  painter->paint_automation_or_peaks(p, true);
+}
+
 void SLIDERPAINTER_set_peak_value_pointers(SliderPainter *painter, int num_channels, float *pointers, bool single_line_style){
   painter->set_peak_value_pointers(num_channels, pointers, single_line_style);
   //painter->set_peak_value_pointers(num_channels, NULL);

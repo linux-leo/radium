@@ -1082,7 +1082,7 @@ static void set_status_bar_text(const char *title){
     
     //EditorWidget *editor=(EditorWidget *)tvisual->os_visual.widget;
     for(auto *bottom_bar : g_bottom_bars){      
-      bottom_bar->status_label->setText(title);
+      bottom_bar->set_status_text(QString::fromUtf8(title));
     }
 
     int len = strlen(title);

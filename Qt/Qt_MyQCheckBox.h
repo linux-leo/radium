@@ -77,6 +77,7 @@ struct MyQCheckBox_OnlyCustomPainting : public QCheckBox{
   }
   
   QString vertical_text;
+  bool _unscaled_vertical_text = false;
 
   // Have to do this. Just overriding the paintEvent makes mouse partly stop working.
   void mousePressEvent ( QMouseEvent * event ) override {
@@ -182,7 +183,7 @@ struct MyQCheckBox_OnlyCustomPainting : public QCheckBox{
                                         
                                         s7extra_applyFunc_void_varargs(draw_checkbox_func,
                                                                        DYN_create_int(API_get_gui_from_widget(this)),
-                                                                       DYN_create_string_dont_copy(_text_to_draw.data()),
+                                                                       DYN_create_string_dont_copy(_unscaled_vertical_text ? L"" : _text_to_draw.data()),
                                                                        DYN_create_bool(isChecked()),
                                                                        DYN_create_int(x1_border),
                                                                        DYN_create_int(y1_border),
@@ -214,7 +215,15 @@ struct MyQCheckBox_OnlyCustomPainting : public QCheckBox{
                                                                        
                                                                        g_uninitialized_dyn);
                                       });
-  
+    if (_unscaled_vertical_text) {
+      p.setPen(palette().color(QPalette::WindowText));
+      p.translate(width() / 2.0, height() / 2.0);
+      p.rotate(-90);
+      const QFontMetrics fm(font());
+      const int text_width = fm.horizontalAdvance(vertical_text);
+      p.drawText(QRectF(-text_width / 2.0, -fm.height() / 2.0,
+                       text_width, fm.height()), Qt::AlignCenter, vertical_text);
+    }
   }
 
   
