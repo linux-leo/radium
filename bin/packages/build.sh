@@ -136,6 +136,7 @@ build_faust() {
 	
 	# Use all CPUs when building faust.
 	JOBS=$(nproc)
+	
 	#sed -i.backup "s/(BUILDLOCATION)$/(BUILDLOCATION) -j${JOBS}/" Makefile
 	#exit -1
 
@@ -722,5 +723,6 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]] ; then
 
 
 	touch deletemetorebuild
-
 fi
+
+echo "Success"

@@ -1933,8 +1933,18 @@ static void set_effect_value(struct SoundPlugin *plugin, int time, int effect_nu
     aeffect->setParameter(aeffect, effect_num, value);
     
   } else {
+    auto *parameter = data->audio_instance->getParameters()[effect_num];
+
+    // VST3 plugins can expose non-automatable MIDI controller parameters.
+    // These represent events, not persistent controls: JUCE's VST3 wrapper
+    // reports zero for them, including pitch bend (where zero is full down).
+    // Replaying those values when loading a song would detune instruments.
+    // MIDI events are delivered separately and must still reach the plugin.
+    if (is_vst3(plugin) && !parameter->isAutomatable())
+      return;
+
     // This caused glitches with vst2 plugins, but there doesn't seem to be locks when using vst3 or au plugins. (This seems to have changed, and JUCE even allocates memory when calling setValue(). *Sigh*.)
-    data->audio_instance->getParameters()[effect_num]->setValue(value);
+    parameter->setValue(value);
   }
 }
 
