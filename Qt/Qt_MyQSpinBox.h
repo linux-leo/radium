@@ -42,13 +42,23 @@ struct MyQSpinBox : public GL_PauseCaller, public QSpinBox{
     lineEdit()->installEventFilter(this);
   }
 
+  void stepBy(int steps) override {
+    // Arrow clicks while the field isn't being edited: change the value only.
+    // The base implementation would selectAll() the line edit afterwards.
+    if (!_arrow_focus_enabled && !lineEdit()->hasFocus()) {
+      setValue(value() + steps * singleStep());  // clamps to min/max and emits valueChanged
+      return;
+    }
+    QSpinBox::stepBy(steps);
+  }
+
   bool eventFilter(QObject *watched, QEvent *event) override {
     // TabFocus prevents the arrow buttons from taking keyboard focus. Allow
     // explicit clicks in the number field to start editing as usual.
     if (!_arrow_focus_enabled && watched == lineEdit()
         && event->type() == QEvent::MouseButtonPress && !lineEdit()->isReadOnly())
       setFocus(Qt::MouseFocusReason);
-    return QSpinBox::eventFilter(watched, event);
+  return QSpinBox::eventFilter(watched, event);
   }
 
   bool _highlight_arrow_hover = false;
@@ -118,7 +128,12 @@ struct MyQSpinBox : public GL_PauseCaller, public QSpinBox{
     printf("Got focusOutEvent\n");
     release_keyboard_focus();
     GL_lock();
-    QSpinBox::focusOutEvent(e);                                            
+    QSpinBox::focusOutEvent(e);
+    QLineEdit *edit = lineEdit();
+    if (edit) {
+      edit->deselect();
+      edit->update();
+    }
     GL_unlock();
   }                                                                     
   void hideEvent ( QHideEvent *e ) override {                                
