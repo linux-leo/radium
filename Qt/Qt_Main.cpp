@@ -246,25 +246,39 @@ bool PLAYER_ignore_malloc_free_checks(void){
   extern "C" void __sanitizer_free_hook(const volatile void *ptr);
 #endif
 
+static void report_plugin_rt_memory_error(bool is_alloc);
+
 static void handle_RT_malloc_free_error(bool is_alloc, const char *message, bool force_abort = false){
   static __thread int s_num_visitors = 0;
 
   s_num_visitors++;
 
   if (s_num_visitors==1){ // If not, we end up in an endless recursive loop.
-    
-    printf("\n\n\n==========================================================\n"
-           "  %s: %s.\n"
-           "==============================================================\n\n\n",
-           is_alloc ? "__sanitizer_malloc_hook" : "__sanitizer_free_hook",
-           message);
-    
-    if (force_abort) {
-      //abort();
+
+    if (CRASHREPORTER_is_processing_plugin()){
+
+      // Plugin hosts are outside our control and may allocate/free on RT
+      // threads. Print an error instead of blocking in getchar().
+      report_plugin_rt_memory_error(is_alloc);
+
     } else {
-      //abort();
-      //printf("   (press return)\n");
-      //getchar();
+
+      printf("\n\n\n==========================================================\n"
+             "  %s: %s.\n"
+             "==========================(press return to continue)============\n\n\n",
+             is_alloc ? "__sanitizer_malloc_hook" : "__sanitizer_free_hook",
+             message);
+      
+      getchar();
+	  
+      if (force_abort) {
+        //abort();
+      } else {
+        //abort();
+        //printf("   (press return)\n");
+        //getchar();
+      }
+
     }
     
   }
@@ -425,12 +439,44 @@ static void handle_RT_malloc_free(bool is_alloc, void *mem, int size){
 #endif // DEBUG_MEMORY_ALLOC_MORE
 
 
+static void report_plugin_rt_memory_error(bool is_alloc)
+{
+#if 0	
+  // Only report once per thread to avoid flooding the terminal, since many
+  // plugins allocate on every processBlock.
+  static __thread bool has_reported = false;
+
+  if (has_reported)
+    return;
+
+  has_reported = true;
+#endif
+  
+  fprintf(stderr,
+          "\033[31m"
+          "Error: Memory %s from a plugin while running on an RT thread.\n"
+          "This is not allowed in Radium, but the operation was done by the plugin.\n"
+          "\033[0m",
+          is_alloc ? "allocation" : "free");
+}
+
+
 extern "C" {
 
 __attribute__((weak))
 void __sanitizer_malloc_hook(const volatile void *ptr, size_t size){
   if (PLAYER_ignore_malloc_free_checks())
     return;
+
+  // The crash reporter allocates memory while creating a report. If the
+  // report is triggered from an RT thread, those allocations must be ignored.
+  if (CRASHREPORTER_ignore_malloc_free_checks())
+    return;
+
+  if (CRASHREPORTER_is_processing_plugin()){
+    report_plugin_rt_memory_error(true);
+    return;
+  }
 
 #if DEBUG_MEMORY_ALLOC_MORE
   if (g_is_allocating_or_freeing)
@@ -459,6 +505,16 @@ __attribute__((weak))
 void __sanitizer_free_hook(const volatile void *ptr){
   if (PLAYER_ignore_malloc_free_checks())
     return;
+
+  // The crash reporter allocates memory while creating a report. If the
+  // report is triggered from an RT thread, those allocations must be ignored.
+  if (CRASHREPORTER_ignore_malloc_free_checks())
+    return;
+
+  if (CRASHREPORTER_is_processing_plugin()){
+    report_plugin_rt_memory_error(false);
+    return;
+  }
 
 #if DEBUG_MEMORY_ALLOC_MORE
   if (g_is_allocating_or_freeing)
@@ -1421,6 +1477,7 @@ public:
 protected:
 
   double _time_of_last_alt = -1;
+  QPoint _lalt_press_cursor_pos;
   bool menu_was_active_at_least_key_press = false;
   bool last_released_key_was_lalt = false;  
   bool last_key_was_lalt = false;
@@ -1517,6 +1574,19 @@ protected:
       bool must_return_true = false;
 
       bool menu_is_active = GFX_MenuActive();
+
+      if (modifier==EVENT_ALT_L) {
+        if (is_key_press) {
+          if (tevent_autorepeat==false)
+            _lalt_press_cursor_pos = QCursor::pos();
+        } else if (g_last_pressed_key==EVENT_ALT_L) {
+          // The window manager grabs the pointer when left alt is used as a modifier to
+          // drag a window (e.g. Alt+drag on X11). Qt might not see the mouse press then, so
+          // use mouse movement to detect that this was a drag and not a plain alt tap.
+          if ((QCursor::pos() - _lalt_press_cursor_pos).manhattanLength() > 5)
+            CancelMaybeNavigateMenus();
+        }
+      }
       
       //printf("   Modifier: %d. EVENT_ALT_L: %d. Menu is active: %d. Is key press: %d. Scancode: %d\n", modifier, EVENT_ALT_L, GFX_MenuActive(), is_key_press, OS_SYSTEM_get_scancode(event));
 
@@ -1539,7 +1609,12 @@ protected:
           GFX_CloseHamburgerPopup();
         }
 
-      } else if (modifier==EVENT_ALT_L && OS_GFX_main_window_has_focus()){
+      } else if (modifier==EVENT_ALT_L
+                 && (OS_GFX_main_window_has_focus()
+                     // Also open the hamburger popup when the sequencer or mixer runs in its
+                     // own window and has keyboard focus.
+                     || (SETTINGS_read_bool("show_main_menu_bar", false)==false
+                         && GFX_ActiveWindowHasHamburgerButton()))){
 
         //printf(   " last_key_was_alt: %d. Time now: %f. last time: %f. press: %d. Menu active: %d.  Duration: %f\n", last_released_key_was_lalt, TIME_get_ms(), _time_of_last_alt, is_key_press, GFX_MenuActive(), TIME_get_ms()- _time_of_last_alt);
 
@@ -2220,6 +2295,14 @@ protected:
       
     case QEvent::Wheel:
       CancelMaybeNavigateMenus();
+      break;
+
+    case QEvent::Move:
+    case QEvent::Resize:
+      // A window manager may grab the pointer when left alt is used as a modifier to move
+      // or resize a window (e.g. Alt+drag on X11). Don't open the main menus after that.
+      if (obj->isWidgetType() && static_cast<QWidget*>(obj)->isWindow())
+        CancelMaybeNavigateMenus();
       break;
 
     case QEvent::Close:
@@ -3694,6 +3777,10 @@ static void set_main_window_fullscreen(QWidget *toplevel)
   force_fullscreen_layout(toplevel);
   update_main_menu_notch_gap(true);
 
+  // Run after the layout has settled, since the transport bar position
+  // depends on whether the menu bar is visible.
+  QTimer::singleShot(0, []{ update_transport_bar_notch_gap(); });
+
   // The window geometry changes, and the layout is not fully updated until
   // the event loop has been running for a little while. Sync the keyboard
   // focus with the mouse pointer after the layout has settled, in case Qt
@@ -3715,6 +3802,8 @@ static void unset_main_window_fullscreen(QWidget *toplevel)
 
   force_fullscreen_layout(toplevel);
   update_main_menu_notch_gap(false);
+
+  QTimer::singleShot(0, []{ update_transport_bar_notch_gap(); });
 
   QTimer::singleShot(100, []{ FOCUSFRAMES_update_from_mouse_pos(); });
   QTimer::singleShot(1000, []{ FOCUSFRAMES_update_from_mouse_pos(); });
@@ -4208,6 +4297,7 @@ int radium_main(const char *arg){
       xsplitter->addWidget(editor->editor_layout_widget);
 
       xsplitter->addWidget(block_selector);
+      install_transport_bar_notch_gap_updater(block_selector);
       block_selector->move(main_window->width()-100,0);
 
       block_selector->resize(100,block_selector->height());
@@ -5273,6 +5363,17 @@ static QString W_getApplicationDirectory(void)
 #endif // defined(RELEASE) && defined(FOR_WINDOWS)
 
 
+static void radium_atexit_handler(void)
+{
+	// We can get here from exit() in the middle of startup (e.g. when a data
+	// directory is missing). The static DiskPeaksThread destructor must not
+	// find the thread running (QThread would qFatal), and message boxes must
+	// not be spawned while Qt's statics are being torn down.
+	g_qt_is_running = false;
+	DISKPEAKS_stop();
+}
+
+
 int main(int argc, char **argv){
   //return 0;
 
@@ -5536,6 +5637,8 @@ int main(int argc, char **argv){
   R_ASSERT(THREADING_is_main_thread());
   
   g_qt_is_running = true;
+
+  atexit(radium_atexit_handler);
 
   determine_dpi_and_gfx_scale();
 

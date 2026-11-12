@@ -2707,13 +2707,13 @@
   ;;(define total-fixed-height-without-pan (+ name-height mutesolo-height (if (<ra> :mixer-strip-comments-visible) comment-height 0)))
   ;;(define total-fixed-height-with-pan (+ total-fixed-height-without-pan pan-height))
   
+  (when (and is-standalone-mixer-strip (not is-in-instrument-widget))
+    (<gui> :add gui (create-select-current-instrument-button #f)))
+
   (when (not is-in-instrument-widget)
     (define name (create-mixer-strip-name instrument-id strips-config #f is-standalone-mixer-strip))
     (set-fixed-height name name-height)
     (<gui> :add gui name))
-
-  (when (and is-standalone-mixer-strip (not is-in-instrument-widget))
-    (<gui> :add gui (create-select-current-instrument-button #f)))
 
   (define mixer-strip-path-gui (<gui> :vertical-scroll #f))
   ;;(<gui> :set-layout-spacing mixer-strip-path-gui 5 5 5 5 5)
@@ -3326,6 +3326,7 @@
 !!#
 
 (<declare-variable> FROM_C-reconfigure-sequencer-left-part)
+(<declare-variable> update-mixer-strip-path-v2-areas)
 
 (define (remake-mixer-strips . list-of-modified-instrument-ids)
   (FROM_C-reconfigure-sequencer-left-part)
@@ -3357,7 +3358,9 @@
               (<gui> :update-recursively (a-mixer-strips-object :gui))  ;; In Qt, it's not enough to call update on the parent, for some reason. (Advice for other programmers: It's much faster to draw everything manually in semi-large or larger programs, both in terms of CPU and development time (especially in development time), than to use qt's widget system. It will probably look better too. Not only is Qt's widget system extremely slow, it's also very buggy (widgets "jump" all over the place, plus all the more serious bugs), and when you try to file bug reports they are very likely be marked as "not a bug" by the developers. In addition, you have all these insane workarounds about temporarily turning off updates, forced dealyed redrawing, and so forth.)
               ;;(<gui> :update (a-mixer-strips-object :gui)) ;; Doesn't always work.
               )
-            *mixer-strips-objects*))
+            *mixer-strips-objects*)
+  (when (provided? 'mixer-strips-v2.scm)
+    (update-mixer-strip-path-v2-areas)))
 
 
 (define (get-mixer-strips-object-from-gui mixer-strips-gui)

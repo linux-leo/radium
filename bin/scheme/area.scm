@@ -156,10 +156,14 @@
              (old-y2 y2))
          ;;(update-me!)
          (move-internal! dx dy)
-         (update (min old-x1 x1)
-                 (min old-y1 y1)
-                 (max old-x2 x2)
-                 (max old-y2 y2))))
+         ;; Update the union of the old and new position directly. Passing
+         ;; this through `update' would clamp the region to the new position
+         ;; and leave the vacated part of the old position unpainted.
+         (<gui> :update gui
+                (min old-x1 x1)
+                (min old-y1 y1)
+                (max old-x2 x2)
+                (max old-y2 y2))))
 
      (define (update x1* y1* x2* y2*)
        (let ((x1 (max x1 x1*))
@@ -288,13 +292,21 @@
                          (add-sub-area! sub-area x1 y2))))
      
      (define (remove-sub-area! sub-area)
-       (sub-area :about-to-be-removed-internal!)
-       (set! sub-areas (delete sub-area sub-areas eq?))
-       (set! top-area
-	     (if (null? sub-areas)
-		 #f
-		 (last sub-areas)))
-       )
+       ;; The area might already have been removed, for instance if a mouse
+       ;; drag is still in progress while the area tree was rebuilt.
+       (define is-present? (any? (lambda (area)
+                                   (eq? area sub-area))
+                                 sub-areas))
+       (if is-present?
+           (begin
+             (sub-area :about-to-be-removed-internal!)
+             (set! sub-areas (delete sub-area sub-areas eq?))
+             (set! top-area
+                   (if (null? sub-areas)
+                       #f
+                       (last sub-areas))))
+           (if (not (<ra> :release-mode))
+               (assert #f))))
 
      (define (lift-sub-area! sub-area)
        (when (not (eq? sub-area top-area))
@@ -1249,6 +1261,7 @@
 
 (def-area-subclass (<button> :gui :x1 :y1 :x2 :y2
                              :paint-func #f
+                             :icon-paint-func #f
                              :text ""
                              :background-color #f
                              :statusbar-text #f
@@ -1335,7 +1348,9 @@
   (define-override (paint)
     (if paint-func
         (paint-func gui x1 y1 x2 y2)
-        (mypaint)))
+        (mypaint))
+    (if icon-paint-func
+        (icon-paint-func gui x1 y1 x2 y2 is-hovering (is-pressing?))))
 
   (if statusbar-text
       (add-statusbar-text-handler statusbar-text))
@@ -1483,9 +1498,16 @@
                      (let ()
                        (set-mouse-pointer ra:set-open-hand-mouse-pointer gui)
                        #t)))
+   ;; Re-assert the pointer on every move. The raw cycle can remain active
+   ;; when the pointer leaves through one side and re-enters through another,
+   ;; in which case enter-func is not called again.
+   :move-func (lambda (button x* y)
+                (if (not (is-moving?))
+                    (set-mouse-pointer ra:set-open-hand-mouse-pointer gui))
+                #t)
    :leave-func (lambda (button x y)
-                 '(if (not (is-moving?))
-                      (set-mouse-pointer ra:set-normal-mouse-pointer gui))
+                 (if (not (is-moving?))
+                     (set-mouse-pointer ra:set-normal-mouse-pointer gui))
                  #t
                  )
    :data 'mouse-pointerhandler)
@@ -1890,7 +1912,7 @@
             ;;(c-display "     apply-state!. Position dy:" dy)
             (scrollbar :set-slider-pos! (state :slider-pos) #t)))))
 
-  (define (position-areas! start-y1)
+  (define (position-areas-internal! start-y1)
 
     (set! start-y1 (round start-y1))
     
@@ -1939,8 +1961,25 @@
             (when (< num num-sub-areas)
               (remove! num)
               (loop (+ 1 num)))))))
-          
-  
+
+  ;; A scrollbar drag may continue delivering events after the area itself
+  ;; has been removed. Do not try to reposition/remove areas in that case.
+  (define (position-areas! start-y1)
+    (when is-alive
+      (position-areas-internal! start-y1)))
+
+  ;; Drop the cached area references when the area tree is removed. Otherwise
+  ;; a late scrollbar callback could try to remove a cached area that is no
+  ;; longer in sub-areas.
+  (define-override (remove-sub-areas!)
+    (let loop ((num 0))
+      (when (< num num-sub-areas)
+        (set! (areas num) #f)
+        (set! (areas-used num) #f)
+        (set! (area-heights num) #f)
+        (loop (+ num 1))))
+    (super:remove-sub-areas!))
+ 
   (position-areas! y1)
 
   (define (get-largest-area-y1)

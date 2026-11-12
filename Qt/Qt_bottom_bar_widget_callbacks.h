@@ -815,6 +815,7 @@ QWidget *BottomBar_create(QWidget *parent, bool include_editor_elements, bool in
     };
     ret->menu_group_layout->addWidget(hamburger_button);
     ret->_hamburger_button = hamburger_button;
+    GFX_register_hamburger_button(hamburger_button);
   }
   
   {

@@ -78,6 +78,7 @@ static HWND gtk_hwnd = NULL;
 #include <vector>
 
 #include "EditorWidget.h"
+#include "../mixergui/QM_MixerWidget.h"
 #include "../common/threading.h"
 
 #if USE_GTK_VISUAL
@@ -114,6 +115,8 @@ static HWND gtk_hwnd = NULL;
 #include "Qt_MyQCheckBox.h"
 #include "Qt_PresetBrowser.h"
 #include "Qt_SaveRestoreWindows_proc.h"
+#include "Qt_Bs_edit_proc.h"
+#include "../embedded_scheme/scheme_proc.h"
 
 class Bottom_bar_widget;
 static QVector<Bottom_bar_widget*> g_bottom_bars; // need to be defined here since it's used by the upperleft widget.
@@ -386,6 +389,21 @@ bool GFX_EditorIsVisible(void){
   return !g_editor->editor_layout_widget->isHidden();
 }
 
+// The grow widget is only needed to make the lower tabs use all horizontal
+// space when neither the editor nor the mixer is visible. When the mixer is
+// visible, it should get the space instead. Otherwise Qt gives the space
+// freed up by a hidden editor to the grow widget, leaving an empty gap to the
+// right of the mixer.
+void GFX_update_main_x_splitter_grow_widget(void){
+  if (g_editor==NULL || g_editor->xsplitter_grow_widget==NULL)
+    return;
+
+  bool mixer_is_in_xsplitter = g_mixer_widget != NULL && get_qwidget(g_mixer_widget)->parentWidget()==g_editor->xsplitter;
+  bool mixer_takes_available_space = mixer_is_in_xsplitter && !get_qwidget(g_mixer_widget)->isHidden();
+
+  g_editor->xsplitter_grow_widget->setVisible(!GFX_EditorIsVisible() && !mixer_takes_available_space);
+}
+
 void GFX_ShowEditor(void){
   if (sequencerInFullMode() && !sequencerInWindow()){
     setSequencerInFullMode(false);    
@@ -397,12 +415,14 @@ void GFX_ShowEditor(void){
   }GL_unlock();
 
   set_editor_focus();
+  GFX_update_main_x_splitter_grow_widget();
 }
 
 void GFX_HideEditor(void){
   g_editor->editor_layout_widget->hide();
   set_editor_focus();
   FOCUSFRAMES_set_focus_best_guess();
+  GFX_update_main_x_splitter_grow_widget();
 }
 
 void GFX_showHideEditor(void){
@@ -437,6 +457,7 @@ void GFX_showHideEditor(void){
   }GL_unlock();
   
   set_editor_focus();
+  GFX_update_main_x_splitter_grow_widget();
 }
 
 static int get_track_from_x(float x){
@@ -797,9 +818,97 @@ void update_main_menu_notch_gap(bool window_is_fullscreen)
   g_menu_bar_notch_gap_widget->setFixedWidth(R_MAX(0, gap_end - left_bar_width));
 }
 
+// Called when entering/leaving full screen, and when the main menu bar is
+// shown/hidden. If the window is full screen on a mac display with a notch,
+// and the transport bar (which is placed at the top of the blocklist/playlist
+// panel) is under the notch, ask the scheme code to reserve empty space above
+// it so that it is painted below the notch.
+void update_transport_bar_notch_gap(void)
+{
+  if (g_main_window==NULL || g_main_menu_bar==NULL || g_main_menu_bar_right==NULL || g_scheme_has_inited2==false)
+    return;
+
+  int gap = 0;
+
+  int x1, y1, x2, y2;
+
+  if (OS_OSX_window_is_fullscreen((void*)g_main_window->winId())
+      && OS_OSX_get_notch_rect((void*)g_main_window->winId(), x1, y1, x2, y2))
+  {
+    QWidget *panel = BS_get();
+    if (panel != NULL)
+    {
+      QPoint panel_global = panel->mapToGlobal(QPoint(0,0));
+      int panel_x1 = panel_global.x();
+      int panel_x2 = panel_x1 + panel->width();
+
+      // The blocklist/playlist panel starts right below the main menu bar.
+      // Calculate its top position from the menu bar instead of from the
+      // widget geometry, since the layout might not have been updated yet
+      // when the menu bar has just been shown or hidden.
+      int panel_y1 = 0;
+      if (GFX_MenuVisible(NULL))
+        panel_y1 = R_MAX(g_main_menu_bar->sizeHint().height(),
+                         g_main_menu_bar_right->sizeHint().height());
+
+      bool overlap = panel_x1 < x2 && panel_x2 > x1;
+      if (overlap && panel_y1 < y2)
+        gap = y2 - panel_y1;
+    }
+  }
+
+  S7CALL2(void_int, "FROM_C-set-transport-bar-top-gap", gap);
+}
+
+static bool g_transport_bar_notch_gap_update_is_scheduled = false;
+
+// Recheck the notch gap when the transport bar is moved or resized, for
+// example when the splitters are dragged. This can change whether the
+// transport bar is placed under the notch.
+class Transport_bar_notch_gap_updater : public QObject
+{
+public:
+  Transport_bar_notch_gap_updater(QWidget *parent)
+    : QObject(parent)
+  {
+  }
+
+  bool eventFilter(QObject *watched, QEvent *event) override
+  {
+    if (event->type()==QEvent::Move || event->type()==QEvent::Resize)
+    {
+      if (g_transport_bar_notch_gap_update_is_scheduled==false)
+      {
+        g_transport_bar_notch_gap_update_is_scheduled = true;
+        QTimer::singleShot(0, []{
+          g_transport_bar_notch_gap_update_is_scheduled = false;
+          update_transport_bar_notch_gap();
+        });
+      }
+    }
+
+    return false;
+  }
+};
+
+void install_transport_bar_notch_gap_updater(QWidget *widget)
+{
+  widget->installEventFilter(new Transport_bar_notch_gap_updater(widget));
+}
+
 #else
 
 void update_main_menu_notch_gap(bool window_is_fullscreen)
+{
+  // No-op on platforms without a notch.
+}
+
+void update_transport_bar_notch_gap(void)
+{
+  // No-op on platforms without a notch.
+}
+
+void install_transport_bar_notch_gap_updater(QWidget *widget)
 {
   // No-op on platforms without a notch.
 }

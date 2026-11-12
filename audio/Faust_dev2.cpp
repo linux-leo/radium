@@ -50,6 +50,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. */
 #include "../bin/packages/faust/architecture/faust/gui/Soundfile.h"
 #include "../bin/packages/faust/architecture/faust/gui/LibsndfileReader.h"
 
+#include "Faust_latency.hpp"
+
 #if __GNUC__ >= 5
 #  pragma GCC diagnostic pop
 #endif
@@ -128,6 +130,19 @@ static inline float velocity2gain(float val)
 		return powf(10, scale(val, 0.0f, 1.0f, -40, 20) / 20.0f) / 10.0f;
 }
 
+// Convert note_t.velocity [0..1] to the continuous MIDI-scale velocity
+// [0..127] passed to the poly dsp's keyOn/setVolume. Shared so that a volume
+// change produces exactly the same gain/vel zone values as a note-on with
+// that velocity. Note that this is deliberately not rounded to an integer:
+// quantizing the gain to 1/127 steps makes velocity automation on quiet
+// notes (where the gain is small) jump in large steps, which sounds like
+// zipper noise. (Faust Dev 1 writes the continuous velocity2gain() value
+// straight to the gain zone for the same reason.)
+static inline float velocity_to_midi_velocity(float val)
+{
+	return velocity2gain(val) * 127.0f;
+}
+
 // Diagnostic note writer: appends a note to the LLM session log
 // (~/.radium/llm.log, same file and format as radium::llm::llm_log_note).
 // Always appends and never truncates: the GUI-side log writer owns the
@@ -195,6 +210,7 @@ struct FaustDev2Dsp
 	float *param_values;      // current values, indexed by APIUI id
 	int num_inputs;
 	int num_outputs;
+	int latency_samples;      // declared by the Faust program (see Faust_latency.hpp)
 
 	FaustDev2Dsp()
 		: poly_dsp(NULL)
@@ -211,6 +227,7 @@ struct FaustDev2Dsp
 		, param_values(NULL)
 		, num_inputs(0)
 		, num_outputs(0)
+		, latency_samples(0)
 	{
 	}
 
@@ -403,6 +420,7 @@ static FaustDev2Dsp *create_dsp_data(dsp_factory *factory,
 	dsp_data->num_params = dsp_data->api_ui.getParamsCount();
 	dsp_data->num_inputs = final_dsp->getNumInputs();
 	dsp_data->num_outputs = final_dsp->getNumOutputs();
+	dsp_data->latency_samples = radium::faust_get_latency_samples(mono_dsp, sample_rate);
 
 	dsp_data->param_values = (float*)V_malloc(sizeof(float) * dsp_data->num_params);
 	for (int i = 0; i < dsp_data->num_params; i++)
@@ -740,6 +758,8 @@ static void perform_compile_completion(instrument_t patch_id,
 	devdata->ready.svg_succeeded = (svg_dir != NULL);
 	devdata->ready.num_inputs = dsp_data->num_inputs;
 	devdata->ready.num_outputs = dsp_data->num_outputs;
+
+	plugin->num_visible_outputs = R_MIN(MAX_CHANNELS, dsp_data->num_outputs);
 
 	// Permanent diagnostic: record what was actually compiled (channel
 	// counts, instrument/effect classification, and the first 400 chars
@@ -1089,8 +1109,7 @@ static void RT_process(SoundPlugin *plugin, int64_t time, int num_frames, float 
 			if (ev.type == NoteEventCollector::NOTE_ON)
 			{
 				float pitch = ev.note.pitch;
-				float gain = velocity2gain(ev.note.velocity);
-				int vel = R_BOUNDARIES(0, (int)(gain * 127), 127);
+				float vel = velocity_to_midi_velocity(ev.note.velocity);
 				MapUI *voice = dsp_data->poly_dsp->keyOn(0, pitch, vel);
 				if (voice != NULL)
 					register_note_voice(dsp_data, ev.note, pitch, static_cast<FaustDev2PolyVoice*>(voice));
@@ -1122,7 +1141,7 @@ static void RT_process(SoundPlugin *plugin, int64_t time, int num_frames, float 
 						dsp_data->poly_dsp->keyOff(0, pitch);
 				}
 			}
-			else // NOTE_PITCH
+			else if (ev.type == NoteEventCollector::NOTE_PITCH)
 			{
 				// Glide / pitch-line change. Only the freq/key zones are
 				// updated (setPitch keeps fCurNote at the note-on pitch, since
@@ -1135,6 +1154,24 @@ static void RT_process(SoundPlugin *plugin, int64_t time, int num_frames, float 
 					if (is_note(ev.note, nv.note_id, nv.seqblock))
 					{
 						nv.voice->setPitch(ev.note.pitch);
+						break;
+					}
+				}
+			}
+			else // NOTE_VOLUME
+			{
+				// Velocity / aftertouch change. Updates the gain/vel|velocity
+				// zones of the voice playing this exact note. If the note is
+				// not registered (keyOn dropped, or already released), the
+				// event is ignored.
+				float velocity = velocity_to_midi_velocity(ev.note.velocity);
+
+				for (int n = 0; n < dsp_data->num_note_voices; n++)
+				{
+					NoteVoice &nv = dsp_data->note_voices[n];
+					if (is_note(ev.note, nv.note_id, nv.seqblock))
+					{
+						nv.voice->setVolume(velocity);
 						break;
 					}
 				}
@@ -1178,6 +1215,19 @@ static void RT_process(SoundPlugin *plugin, int64_t time, int num_frames, float 
 #pragma GCC diagnostic pop
 
 
+// Returns the latency declared by the Faust program (see Faust_latency.hpp).
+static int RT_get_latency(const struct SoundPlugin *plugin)
+{
+	FaustDev2Data *devdata = (FaustDev2Data*)plugin->data;
+	FaustDev2Dsp *dsp_data = devdata->dsp_data;
+
+	if (dsp_data == NULL)
+		return 0;
+
+	return dsp_data->latency_samples;
+}
+
+
 static void play_note(SoundPlugin *plugin, int block_delta_time, note_t note)
 {
 	FaustDev2Data *devdata = (FaustDev2Data*)plugin->data;
@@ -1203,14 +1253,12 @@ static void set_note_volume(SoundPlugin *plugin, int block_delta_time, note_t no
 	FaustDev2Data *devdata = (FaustDev2Data*)plugin->data;
 	FaustDev2Dsp *dsp_data = devdata->dsp_data;
 
-	if (dsp_data == NULL || !dsp_data->is_instrument)
-		return;
-
-	// For now, just ignore sub-block precision for volume changes (matching existing Faust-Dev behavior).
-	// Volume is already applied when the note starts via keyOn's velocity parameter.
-	// TODO: Support per-voice volume updates via MapUI.
-	(void)block_delta_time;
-	(void)note;
+	// The volume change is queued and applied in RT_process at the exact
+	// sample offset, in the same way as note-on/note-off/pitch events.
+	// (The initial volume is already applied when the note starts via
+	// keyOn's velocity parameter.)
+	if (dsp_data != NULL && dsp_data->is_instrument)
+		dsp_data->collector.noteVolume(block_delta_time, note);
 }
 
 
@@ -1828,6 +1876,7 @@ void create_faust_dev2_plugin(void)
 	plugin_type->get_display_value_string = get_display_value_string;
 	plugin_type->get_effect_description   = get_effect_description;
 	plugin_type->effect_is_visible = effect_is_visible;
+	plugin_type->RT_get_latency   = RT_get_latency;
 
 	plugin_type->info =
 		"HTML: FAUST (Functional Audio Stream) is a functional programming language specifically designed for real-time signal processing and synthesis. FAUST targets high-performance signal processing applications and audio plug-ins for a variety of platforms and standards. More info <A href=\"http://faust.grame.fr\">here</a>."

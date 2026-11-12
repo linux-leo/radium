@@ -4640,6 +4640,11 @@ void setAmountOfGradient(float val){
   }
 }
 
+void refreshGraphics(void){
+  for(auto *window : QApplication::topLevelWidgets())
+    updateWidgetRecursively(window);
+}
+
 
 void printMixerTree(void){
   SP_print_tree();
