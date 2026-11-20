@@ -63,8 +63,16 @@ static SoundPluginType receive_type2 = {};
 static SoundPluginType send_type8 = {};
 static SoundPluginType receive_type8 = {};
 
+static SoundPluginType send_type16 = {};
+static SoundPluginType receive_type16 = {};
+
+static SoundPluginType send_type32 = {};
+static SoundPluginType receive_type32 = {};
+
 SoundPluginType *g_receive_type2 = &receive_type2;
 SoundPluginType *g_receive_type8 = &receive_type8;
+SoundPluginType *g_receive_type16 = &receive_type16;
+SoundPluginType *g_receive_type32 = &receive_type32;
 
 namespace{
 
@@ -434,9 +442,9 @@ namespace{
 }
 
 static Type get_type(SoundPlugin *plugin){
-  if (plugin->type==&send_type2 || plugin->type==&send_type8)
+  if (plugin->type==&send_type2 || plugin->type==&send_type8 || plugin->type==&send_type16 || plugin->type==&send_type32)
     return Type::SENDER;
-  else if (plugin->type==&receive_type2 || plugin->type==&receive_type8)
+  else if (plugin->type==&receive_type2 || plugin->type==&receive_type8 || plugin->type==&receive_type16 || plugin->type==&receive_type32)
     return Type::RECEIVER;
   else
     return Type::SOMETHING_ELSE;
@@ -822,6 +830,18 @@ void create_sendreceive_plugins(void){
     
     send_type8.RT_process               = RT_send_process;
     send_type8.RT_get_audio_tail_length = RT_send_get_audio_tail_length;
+
+    // send 16ch
+    ////////////
+    send_type16 = send_type8;
+    send_type16.name = "Send16";
+    send_type16.num_inputs = 16;
+
+    // send 32ch
+    ////////////
+    send_type32 = send_type8;
+    send_type32.name = "Send32";
+    send_type32.num_inputs = 32;
     
     //info
   
@@ -861,6 +881,18 @@ void create_sendreceive_plugins(void){
     receive_type8.RT_process               = RT_receive_process;
     receive_type8.RT_get_audio_tail_length = RT_receive_get_audio_tail_length;
     receive_type8.RT_get_latency           = RT_receive_get_latency;
+
+    // receive 16ch
+    ///////////////
+    receive_type16 = receive_type8;
+    receive_type16.name = "Receive16";
+    receive_type16.num_outputs = 16;
+
+    // receive 32ch
+    ///////////////
+    receive_type32 = receive_type8;
+    receive_type32.name = "Receive32";
+    receive_type32.num_outputs = 32;
   }
 
   
@@ -868,9 +900,13 @@ void create_sendreceive_plugins(void){
 
   PR_add_plugin_type(&send_type2);
   PR_add_plugin_type(&send_type8);
+  PR_add_plugin_type(&send_type16);
+  PR_add_plugin_type(&send_type32);
   
   PR_add_menu_entry(PluginMenuEntry::separator());
   
   PR_add_plugin_type(&receive_type2);
   PR_add_plugin_type(&receive_type8);
+  PR_add_plugin_type(&receive_type16);
+  PR_add_plugin_type(&receive_type32);
 }

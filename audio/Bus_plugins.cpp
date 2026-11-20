@@ -37,6 +37,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. */
 
 static SoundPluginType pipe_type = {};
 static SoundPluginType pipe_type8 = {};
+static SoundPluginType pipe_type16 = {};
+static SoundPluginType pipe_type32 = {};
 
 static SoundPluginType left_in_type = {};
 static SoundPluginType right_in_type = {};
@@ -211,6 +213,44 @@ void create_bus_plugins(bool only_pipe){
 
   if (has_inited==false)
   {
+    pipe_type16.type_name                = "Pipe";
+    pipe_type16.name                     = "Pipe16";
+    pipe_type16.info                     = "A pipe sends the sound through unmodified.";
+    pipe_type16.num_inputs               = 16;
+    pipe_type16.num_outputs              = 16;
+    pipe_type16.is_instrument            = false;
+    pipe_type16.num_effects              = 0;
+    pipe_type16.will_always_autosuspend  = true,
+    pipe_type16.create_plugin_data       = create_plugin_data;
+    pipe_type16.cleanup_plugin_data      = cleanup_plugin_data;
+    
+    pipe_type16.RT_process               = RT_pipe_process;
+    pipe_type16.RT_get_audio_tail_length = RT_get_audio_tail_length;
+    
+    pipe_type16.data                     = NULL;
+  }
+
+  if (has_inited==false)
+  {
+    pipe_type32.type_name                = "Pipe";
+    pipe_type32.name                     = "Pipe32";
+    pipe_type32.info                     = "A pipe sends the sound through unmodified.";
+    pipe_type32.num_inputs               = 32;
+    pipe_type32.num_outputs              = 32;
+    pipe_type32.is_instrument            = false;
+    pipe_type32.num_effects              = 0;
+    pipe_type32.will_always_autosuspend  = true,
+    pipe_type32.create_plugin_data       = create_plugin_data;
+    pipe_type32.cleanup_plugin_data      = cleanup_plugin_data;
+    
+    pipe_type32.RT_process               = RT_pipe_process;
+    pipe_type32.RT_get_audio_tail_length = RT_get_audio_tail_length;
+    
+    pipe_type32.data                     = NULL;
+  }
+
+  if (has_inited==false)
+  {
     left_in_type.type_name                = "2ch -> 1ch";
     left_in_type.name                     = "Keep Left channel only";
     left_in_type.info                     = "Receives a stereo sound. Sends out the left channel.";
@@ -275,6 +315,8 @@ void create_bus_plugins(bool only_pipe){
     PR_add_plugin_type(&pipe_type);
   } else {
     PR_add_plugin_type(&pipe_type8);
+    PR_add_plugin_type(&pipe_type16);
+    PR_add_plugin_type(&pipe_type32);
     
     PR_add_plugin_type_no_menu(&left_in_type);
     PR_add_plugin_type_no_menu(&right_in_type);

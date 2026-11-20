@@ -47,6 +47,14 @@ struct Data {
 };
 
 }
+
+static bool is_system_out_name(const char *name){
+  return !strcmp(name,"System Out")
+    || !strcmp(name,"System Out 8")
+    || !strcmp(name,"System Out 16")
+    || !strcmp(name,"System Out 32")
+    || !strcmp(name,"System Out Mono");
+}
  
 static Data *create_data(const SoundPluginType *plugin_type, jack_client_t *client, int num_inputs, int num_outputs, const char **input_portnames, const char **output_portnames, bool is_system_in_or_out){
   Data *data = (Data*)V_calloc(1,sizeof(Data));
@@ -195,7 +203,7 @@ static Data *create_data(const SoundPluginType *plugin_type, jack_client_t *clie
     
   }
 
-  if(data->client!=NULL && !nsmIsActive() && (!strcmp(plugin_type->name,"System Out") || !strcmp(plugin_type->name,"System Out 8") || !strcmp(plugin_type->name,"System Out Mono"))){
+  if(data->client!=NULL && !nsmIsActive() && is_system_out_name(plugin_type->name)){
 
     const char **inportnames=jack_get_ports(client,NULL,NULL,JackPortIsPhysical|JackPortIsInput);
 
@@ -432,8 +440,8 @@ static void cleanup_plugin_data(SoundPlugin *plugin){
   int i;
   Data *data = static_cast<Data*>(plugin->data);
 
-  if(!strcmp(plugin->type->name,"System Out") || !strcmp(plugin->type->name,"System Out 8") || !strcmp(plugin->type->name,"System Out Mono")){
-    static const char *system_out_names[] = {"System Out", "System Out 8", "System Out Mono"}; // [NO_STATIC_ARRAY_WARNING]
+  if(is_system_out_name(plugin->type->name)){
+    static const char *system_out_names[] = {"System Out", "System Out 8", "System Out 16", "System Out 32", "System Out Mono"}; // [NO_STATIC_ARRAY_WARNING]
     struct SoundPlugin *other_system_out = NULL;
     for(const char *name : system_out_names){
       if(!strcmp(plugin->type->name, name))
@@ -494,17 +502,33 @@ static SoundPluginType jack8_in_type = {};
 
 static SoundPluginType jack8_out_type = {};
 
+static SoundPluginType jack16_in_type = {};
+
+static SoundPluginType jack16_out_type = {};
+
+static SoundPluginType jack32_in_type = {};
+
+static SoundPluginType jack32_out_type = {};
+
 static SoundPluginType system_in_type_mono = {};
 
 static SoundPluginType system_in_type = {};
 
 static SoundPluginType system_in_type8 = {};
 
+static SoundPluginType system_in_type16 = {};
+
+static SoundPluginType system_in_type32 = {};
+
 static SoundPluginType system_out_type_mono = {};
 
 static SoundPluginType system_out_type = {};
 
 static SoundPluginType system_out_type8 = {};
+
+static SoundPluginType system_out_type16 = {};
+
+static SoundPluginType system_out_type32 = {};
 
 
 static void init_types(void){
@@ -595,6 +619,14 @@ static void init_types(void){
 
  jack8_in_type.RT_process       = RT_process;
 
+ jack16_in_type = jack8_in_type;
+ jack16_in_type.name = "Jack 16ch In";
+ jack16_in_type.num_outputs = 16;
+
+ jack32_in_type = jack8_in_type;
+ jack32_in_type.name = "Jack 32ch In";
+ jack32_in_type.num_outputs = 32;
+
 
     
 
@@ -612,6 +644,14 @@ static void init_types(void){
  jack8_out_type.create_state        = create_state;
 
  jack8_out_type.RT_process       = RT_process;
+
+ jack16_out_type = jack8_out_type;
+ jack16_out_type.name = "Jack 16ch Out";
+ jack16_out_type.num_inputs = 16;
+
+ jack32_out_type = jack8_out_type;
+ jack32_out_type.name = "Jack 32ch Out";
+ jack32_out_type.num_inputs = 32;
 
 
  
@@ -666,6 +706,14 @@ static void init_types(void){
 
  system_in_type8.RT_process       = RT_process;
 
+ system_in_type16 = system_in_type8;
+ system_in_type16.name = "System In 16";
+ system_in_type16.num_outputs = 16;
+
+ system_in_type32 = system_in_type8;
+ system_in_type32.name = "System In 32";
+ system_in_type32.num_outputs = 32;
+
 
 
 
@@ -718,6 +766,7 @@ static void init_types(void){
  system_out_type8.is_instrument            = false;
  system_out_type8.note_handling_is_RT      = false;
  system_out_type8.num_effects              = 0;
+ system_out_type8.will_never_autosuspend   = true;
  system_out_type8.create_plugin_data       = create_plugin_data_system;
  system_out_type8.cleanup_plugin_data      = cleanup_plugin_data;
 
@@ -726,6 +775,14 @@ static void init_types(void){
  system_out_type8.create_state        = create_state;
 
  system_out_type8.RT_process       = RT_process;
+
+ system_out_type16 = system_out_type8;
+ system_out_type16.name = "System Out 16";
+ system_out_type16.num_inputs = 16;
+
+ system_out_type32 = system_out_type8;
+ system_out_type32.name = "System Out 32";
+ system_out_type32.num_inputs = 32;
 
 }
 
@@ -749,6 +806,12 @@ void create_jack_plugins(void){
     
     jack8_in_type.data = g_jack_client;
     PR_add_plugin_type(&jack8_in_type);
+
+    jack16_in_type.data = g_jack_client;
+    PR_add_plugin_type(&jack16_in_type);
+
+    jack32_in_type.data = g_jack_client;
+    PR_add_plugin_type(&jack32_in_type);
     
     mono_out_type.data = g_jack_client;
     PR_add_plugin_type(&mono_out_type);
@@ -758,6 +821,12 @@ void create_jack_plugins(void){
     
     jack8_out_type.data = g_jack_client;
     PR_add_plugin_type(&jack8_out_type);
+
+    jack16_out_type.data = g_jack_client;
+    PR_add_plugin_type(&jack16_out_type);
+
+    jack32_out_type.data = g_jack_client;
+    PR_add_plugin_type(&jack32_out_type);
   }
   
   //PR_add_menu_entry(PluginMenuEntry::separator());
@@ -771,6 +840,12 @@ void create_jack_plugins(void){
   system_in_type8.data = g_jack_client;
   PR_add_plugin_type(&system_in_type8);
 
+  system_in_type16.data = g_jack_client;
+  PR_add_plugin_type(&system_in_type16);
+
+  system_in_type32.data = g_jack_client;
+  PR_add_plugin_type(&system_in_type32);
+
   PR_add_menu_entry(PluginMenuEntry::separator());
   
   system_out_type_mono.data = g_jack_client;
@@ -781,6 +856,12 @@ void create_jack_plugins(void){
 
   system_out_type8.data = g_jack_client;
   PR_add_plugin_type(&system_out_type8);
+
+  system_out_type16.data = g_jack_client;
+  PR_add_plugin_type(&system_out_type16);
+
+  system_out_type32.data = g_jack_client;
+  PR_add_plugin_type(&system_out_type32);
 }
 
 const char *JACK_get_name(const SoundPlugin *plugin, int portnum){

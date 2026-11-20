@@ -24,6 +24,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. */
 #include "../api/api_gui_proc.h"
 #include "../api/api_proc.h"
 
+#include <algorithm>
+
+#include <QTimer>
+
 #include "Qt_MyQScrollBar.hpp"
 
 /*
@@ -555,18 +559,22 @@ public:
     }
   }
 
-  void updateBusChecked(QAbstractButton* checkwidget, QSlider* bus_slider, SoundProducer *bus){
+  void updateBusChecked(MyQCheckBox* checkwidget, QSlider* bus_slider, SoundProducer *bus, bool update_hover_highlight){
     if(bus==NULL){
       R_ASSERT_NON_RELEASE(g_is_loading);
       return;
     }
 
     struct Patch *from = _patch.data();
+    if (from==NULL)
+      return;
     
     if(instrumentIsOpen(from->id)==false) // happens when creating new instrument.
       return;
     
     struct Patch *to = const_cast<Patch*>(SP_get_plugin(bus)->patch);
+    if (to==NULL)
+      return;
 
     if(instrumentIsOpenAndAudio(from->id)==false){
       R_ASSERT_NON_RELEASE(false);
@@ -579,19 +587,33 @@ public:
     }
     
     bool are_connected = MW_are_connected(from, to);
+
+    if (update_hover_highlight){
+      // Do not show the hover highlight if this send can not be connected, but
+      // keep the checkbox enabled so that clicking it explains why.
+      checkwidget->_show_hover_highlight = are_connected || CONNECTION_can_connect(from, to);
+    }
+
     checkwidget->setChecked(are_connected);
     bus_slider->setEnabled(are_connected);
 
-    if(are_connected)
-      checkwidget->setEnabled(true);
-    else{
-      bool can_connect = CONNECTION_can_connect(from, to);
-      //printf("   %s => %s legal: %d\n", from->name, to->name, can_connect);
-      checkwidget->setEnabled(can_connect);
-    }
+    // Keep the checkbox clickable even if the send can not be connected. If
+    // it would create a feedback loop, set_bus_value() refuses the connection
+    // and tells the user why.
+    checkwidget->setEnabled(true);
+  }
+
+  void updateBusCheckboxes(bool update_hover_highlight){
+    Buses buses = MIXER_get_buses();
+    updateBusChecked(bus1_onoff, bus1_slider, buses.bus1, update_hover_highlight);
+    updateBusChecked(bus2_onoff, bus2_slider, buses.bus2, update_hover_highlight);
+    updateBusChecked(bus3_onoff, bus3_slider, buses.bus3, update_hover_highlight);
+    updateBusChecked(bus4_onoff, bus4_slider, buses.bus4, update_hover_highlight);
+    updateBusChecked(bus5_onoff, bus5_slider, buses.bus5, update_hover_highlight);
   }
     
   QElapsedTimer time_of_last_minheight_inc;
+  QElapsedTimer _bus_hover_highlight_timer;
   int number_of_minheight_incs = 0;
   
   void call_regularly_for_painters(void){
@@ -607,32 +629,55 @@ public:
       _comp_widget->calledRegularlyByParent();
   }
 
+  void adjust_height_to_fit_content(void){
+    // Only the normal small instrument widget is auto-sized. Half/Full mode
+    // and the mixer set the height explicitly.
+    if (_size_type != SIZETYPE_NORMAL || instrumentInMixer())
+      return;
+
+    QScrollBar *scrollbar = scrollArea->verticalScrollBar();
+
+    // maximum() is the number of pixels the content overflows the viewport.
+    // Adding it to the current height makes all content fit in one step.
+    if (!scrollbar->isVisible() || scrollbar->maximum() <= 0)
+      return;
+
+    const int curr_height = height();
+    if (curr_height <= 0)
+      return;
+
+    int new_minimum_height = curr_height + scrollbar->maximum() + 1;
+
+    const int max_height = window()->height();
+    if (max_height > 0 && new_minimum_height > max_height)
+      new_minimum_height = max_height;
+
+    if (new_minimum_height <= minimumHeight())
+      return;
+
+    printf("  **UP** MINIMIZING UP to %d\n", new_minimum_height);
+    setMinimumHeight(new_minimum_height);
+    time_of_last_minheight_inc.restart();
+    number_of_minheight_incs++;
+  }
+
   void calledRegularlyByParent(void){
     
     //printf("hello %p\n", this);
 
+    {
+      bool update_hover_highlight = !_bus_hover_highlight_timer.isValid() || _bus_hover_highlight_timer.elapsed() > 250;
+      if (update_hover_highlight)
+        _bus_hover_highlight_timer.restart();
+
+      radium::ScopedGeneration scoped_update(_is_updating);
+      updateBusCheckboxes(update_hover_highlight);
+    }
+
     if (_size_type == SIZETYPE_HALF && !instrumentInMixer())
       set_half_height();
     
-    int curr_minimum_height = minimumHeight();
-    
-    bool is_visible = scrollArea->verticalScrollBar()->isVisible();
-    
-    if (is_visible) {
-
-      printf("  **UP** MINIMIZING UP to %d\n", curr_minimum_height+5);
-      setMinimumHeight(curr_minimum_height+5);
-      time_of_last_minheight_inc.restart();
-      number_of_minheight_incs++;
-      
-    } else if (_size_type != SIZETYPE_HALF && curr_minimum_height > 5){
-
-      if (time_of_last_minheight_inc.elapsed() > 1000 && number_of_minheight_incs < 3) { // Wait at least 1 second before trying to lower it again. If not, it won't stabilize. (might not stabilize now either though, but it won't be that visible now)
-        printf("  **DOWN** MINIMIZING DOWN to %d\n", curr_minimum_height-5);
-        setMinimumHeight(curr_minimum_height-5);
-        number_of_minheight_incs = 0;
-      }
-    }
+    adjust_height_to_fit_content();
   }
 
   void callSystemSliderpainterUpdateCallbacks(void){
@@ -782,12 +827,7 @@ public:
     updateChecked(mute_button, EFFNUM_VOLUME_ONOFF);
     updateChecked(output_volume_onoff, EFFNUM_OUTPUT_VOLUME_ONOFF);
 
-    Buses buses = MIXER_get_buses();
-    updateBusChecked(bus1_onoff, bus1_slider, buses.bus1);
-    updateBusChecked(bus2_onoff, bus2_slider, buses.bus2);
-    updateBusChecked(bus3_onoff, bus3_slider, buses.bus3);
-    updateBusChecked(bus4_onoff, bus4_slider, buses.bus4);
-    updateBusChecked(bus5_onoff, bus5_slider, buses.bus5);
+    updateBusCheckboxes(true);
     
     updateChecked(panning_onoff, EFFNUM_PAN_ONOFF);
     updateChecked(bypass_button, EFFNUM_EFFECTS_ONOFF);
@@ -898,14 +938,6 @@ public:
       }
       
       drywet_slider->setEnabled(enable_widgets);
-
-      if (root->song->mute_system_buses_when_bypassed) {
-        bus1_widget->setEnabled(enable_widgets);
-        bus2_widget->setEnabled(enable_widgets);
-        bus3_widget->setEnabled(enable_widgets);
-        bus4_widget->setEnabled(enable_widgets);
-        bus5_widget->setEnabled(enable_widgets);
-      }
     }
 
     _comp_widget->update_gui();
@@ -981,21 +1013,52 @@ public:
     updateSliderString(system_effect);
   }
 
-  void set_bus_value(SoundProducer *bus, bool val){
+  bool set_bus_value(SoundProducer *bus, bool val){
     if (_is_updating > 0)
-      return;
+      return true;
 
     if (bus==NULL){
       R_ASSERT_NON_RELEASE(g_is_starting_up);
-      return;
+      return false;
+    }
+
+    struct Patch *from = _patch.data();
+    struct Patch *to = const_cast<Patch*>(SP_get_plugin(bus)->patch);
+
+    if (from==NULL || to==NULL){
+      R_ASSERT_NON_RELEASE(false);
+      return false;
+    }
+
+    if (val && !CONNECTION_can_connect(from, to)) {
+      showAsyncMessage(talloc_format("Can not send audio from \"%s\" to \"%s\" because it would create a feedback loop.", from->name, to->name));
+      return false;
     }
 
     ADD_UNDO(MixerConnections_CurrPos());
     
-    if (val)
-      MW_connect(_patch.data(), const_cast<Patch*>(SP_get_plugin(bus)->patch), ConnectionType::IS_SEND);
-    else
-      MW_disconnect(_patch.data(), const_cast<Patch*>(SP_get_plugin(bus)->patch));
+    if (val) {
+      MW_connect(from, to, ConnectionType::IS_SEND);
+
+      if (!MW_are_connected(from, to)) {
+        showAsyncMessage(talloc_format("Can not send audio from \"%s\" to \"%s\".", from->name, to->name));
+        return false;
+      }
+    } else {
+      MW_disconnect(from, to);
+    }
+
+    return true;
+  }
+
+  void handle_bus_onoff(QAbstractButton *checkbox, QSlider *slider, SoundProducer *bus, bool val){
+    if (set_bus_value(bus, val)) {
+      slider->setEnabled(val);
+    } else {
+      QSignalBlocker blocker(checkbox);
+      checkbox->setChecked(false);
+      slider->setEnabled(false);
+    }
   }
   
 private:
@@ -1045,6 +1108,8 @@ private:
 
   QVector<QWidget*> hidden_widgets;
   int height_before_large;
+  int minimum_height_before_large = -1;
+  bool _is_hiding = false;
 
   void set_half_height(void){
     setFixedHeight(g_main_window->height() / 2);
@@ -1061,6 +1126,12 @@ private:
       hidden_widgets.clear();
 
       height_before_large = height();
+
+      // Remember the normal-mode minimum height, so we can go straight back
+      // to it when leaving Half/Full mode. Do not overwrite a valid stored
+      // value with the temporary minimum used while the widget is hidden.
+      if (minimum_height_before_large <= 0 || minimumHeight() > 10)
+        minimum_height_before_large = minimumHeight();
       
       for (int i = 0; i < effects_layout->count(); ++i){
         QWidget *widget = effects_layout->itemAt(i)->widget();
@@ -1129,8 +1200,13 @@ private:
       MW_instrument_widget_set_size(this, _size_type, SIZETYPE_NORMAL);
     
     _size_type = SIZETYPE_NORMAL;
-    
-    setMinimumHeight(10);
+
+    if (!_is_hiding && minimum_height_before_large > 0) {
+      setMinimumHeight(minimum_height_before_large);
+      minimum_height_before_large = -1;
+    } else {
+      setMinimumHeight(10);
+    }
     setMaximumHeight(16777214);
     //resize(width(), height_before_large);
     
@@ -1252,7 +1328,9 @@ public:
       // kept so that half/full mode is entered the next time the widget is
       // shown.
       _patch->widget_height_type = _size_type;
+      _is_hiding = true;
       change_height(SIZETYPE_NORMAL);
+      _is_hiding = false;
       //show_small();  // If not, all instrument widgets will have large height.
     }
   }
@@ -1275,6 +1353,13 @@ public:
       change_height(restore_type);
     else if (!instrumentInMixer())
       S7CALL2(void_void,"FROM_C-minimize-lowertab");
+
+    // Start the height auto-fit immediately instead of waiting for the next
+    // Instruments_widget timer tick. Defer it so the layout has been updated.
+    QTimer::singleShot(0, this, [this]{
+      if (isVisible())
+        adjust_height_to_fit_content();
+    });
 
     //      show_large();
   }
@@ -1513,24 +1598,19 @@ public slots:
 
   
   void on_bus1_onoff_toggled(bool val){
-    set_bus_value(MIXER_get_buses().bus1, val);
-    bus1_slider->setEnabled(val);
+    handle_bus_onoff(bus1_onoff, bus1_slider, MIXER_get_buses().bus1, val);
   }
   void on_bus2_onoff_toggled(bool val){
-    set_bus_value(MIXER_get_buses().bus2, val);
-    bus2_slider->setEnabled(val);
+    handle_bus_onoff(bus2_onoff, bus2_slider, MIXER_get_buses().bus2, val);
   }
   void on_bus3_onoff_toggled(bool val){
-    set_bus_value(MIXER_get_buses().bus3, val);
-    bus3_slider->setEnabled(val);
+    handle_bus_onoff(bus3_onoff, bus3_slider, MIXER_get_buses().bus3, val);
   }
   void on_bus4_onoff_toggled(bool val){
-    set_bus_value(MIXER_get_buses().bus4, val);
-    bus4_slider->setEnabled(val);
+    handle_bus_onoff(bus4_onoff, bus4_slider, MIXER_get_buses().bus4, val);
   }
   void on_bus5_onoff_toggled(bool val){
-    set_bus_value(MIXER_get_buses().bus5, val);
-    bus5_slider->setEnabled(val);
+    handle_bus_onoff(bus5_onoff, bus5_slider, MIXER_get_buses().bus5, val);
   }
 
   

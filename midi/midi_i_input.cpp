@@ -35,6 +35,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. */
 #include "../api/api_proc.h"
 
 #include "nsmtracker.h"
+#include "../api/api_keyplayedit_proc.h"
 #include "../common/TimeData.hpp"
 
 #include "../common/list_proc.h"
@@ -84,8 +85,17 @@ DEFINE_ATOMIC(struct Patch *, g_through_patch) = NULL;
 extern const char *NotesTexts3[131];
 
 
+namespace {
+
+struct StepRecordingMidiMsg{
+  uint32_t msg;
+  bool polyphonic;
+};
+
+} // anonymous namespace
+
 // Allocate since static variables are not good for the GC.
-static auto *g_step_recording_midi_msg_queue = new boost::lockfree::queue<uint32_t, boost::lockfree::capacity<512> > ;
+static auto *g_step_recording_midi_msg_queue = new boost::lockfree::queue<StepRecordingMidiMsg, boost::lockfree::capacity<2048> > ;
 
 
 static radium::Mutex g_midi_learns_mutex;
@@ -128,7 +138,7 @@ static bool msg_is_note_off(const uint32_t msg){
   int      cc0     = MIDI_msg_byte1_remove_channel(msg);
   int      volume  = MIDI_msg_byte3(msg);
 
-  if (cc0==0x80 || (cc0=0x90 && volume==0))
+  if (cc0==0x80 || (cc0==0x90 && volume==0))
     return true;
   else
     return false;
@@ -841,6 +851,7 @@ hash_t* radium::MidiLearn::create_state(void){
   HASH_put_bool(state, "is_enabled", ATOMIC_GET(is_enabled));
   HASH_put_bool(state, "is_learning", ATOMIC_GET(is_learning));
   HASH_put_bool(state, "is_incremental", ATOMIC_GET(is_incremental));
+  HASH_put_float(state, "incremental_speed", ATOMIC_DOUBLE_GET(incremental_speed));
   const symbol_t *port_name_symbol = ATOMIC_GET(port_name);
   HASH_put_chars(state, "port_name", port_name_symbol==NULL ? "" : port_name_symbol->name);
   HASH_put_int(state, "byte1", ATOMIC_GET(byte1));
@@ -856,6 +867,8 @@ void radium::MidiLearn::init_from_state(hash_t *state){
   ATOMIC_SET(is_enabled, HASH_get_bool(state, "is_enabled"));
   if (HASH_has_key(state, "is_incremental"))
     ATOMIC_SET(is_incremental, HASH_get_bool(state, "is_incremental"));
+  if (HASH_has_key(state, "incremental_speed"))
+    ATOMIC_DOUBLE_SET(incremental_speed, R_BOUNDARIES(-10.0, HASH_get_float(state, "incremental_speed"), 10.0));
 }
 
 bool radium::MidiLearn::RT_matching(const symbol_t *port_name, uint32_t msg){
@@ -881,7 +894,7 @@ bool radium::MidiLearn::RT_matching(const symbol_t *port_name, uint32_t msg){
     ATOMIC_SET(byte1, d1);
     ATOMIC_SET(byte2, d2);
 
-    R_ASSERT_NON_RELEASE(ATOMIC_GET(last_value)==-1);
+    R_ASSERT_NON_RELEASE(ATOMIC_DOUBLE_GET(last_value) < 0);
     
     ATOMIC_SET(this->port_name, port_name);
     ATOMIC_SET(is_learning, false);
@@ -917,11 +930,11 @@ int radium::MidiLearn::RT_get_value_for_incremental_mode(uint32_t msg){
   R_ASSERT_NON_RELEASE(msg_is_cc(msg));
   R_ASSERT_NON_RELEASE(ATOMIC_GET(is_incremental));
 
-  int old_value = ATOMIC_GET(last_value);
+  const double old_value = ATOMIC_DOUBLE_GET(last_value);
   
   if (old_value < 0) {
     const int value = MIDI_msg_byte3(msg);
-    ATOMIC_SET(last_value, value);
+    ATOMIC_DOUBLE_SET(last_value, value);
     return value;
   }
         
@@ -930,19 +943,27 @@ int radium::MidiLearn::RT_get_value_for_incremental_mode(uint32_t msg){
   if (inc_value == 0)
     return -1;
 
-  int new_value = old_value + inc_value;
-  
-  if (new_value < 0)
+  const double speed = ATOMIC_DOUBLE_GET(incremental_speed);
+  const double max_value = get_max_value(msg);
+
+  double new_value = old_value + inc_value * speed;
+
+  if (new_value < 0.0)
+    new_value = 0.0;
+  else if (new_value > max_value)
+    new_value = max_value;
+
+  ATOMIC_DOUBLE_SET(last_value, new_value);
+
+  const int old_rounded = (int)(old_value + 0.5);
+  const int new_rounded = (int)(new_value + 0.5);
+
+  // Don't send a new value if the integer value didn't change. This avoids
+  // flooding the player and automation recording when using a fractional speed.
+  if (new_rounded == old_rounded)
     return -1;
   
-  int max_value = get_max_value(msg);
-  
-  if (new_value > max_value)
-    return -1;
-  
-  ATOMIC_SET(last_value, new_value);
-  
-  return new_value;
+  return new_rounded;
 }
   
 bool radium::MidiLearn::RT_maybe_use(const symbol_t *port_name, uint32_t msg){
@@ -1199,9 +1220,13 @@ void MIDI_editor_and_midi_learn_InputMessageHasBeenReceived(const symbol_t *port
 		
 	} else {
 		
-		if(msg_is_note_on(msg))
+		if(msg_is_note_on(msg) || msg_is_note_off(msg))
 		{
-			if (!g_step_recording_midi_msg_queue->bounded_push(msg))
+			StepRecordingMidiMsg step_msg;
+			step_msg.msg = msg;
+			step_msg.polyphonic = shiftPressed();
+
+			if (!g_step_recording_midi_msg_queue->bounded_push(step_msg))
 			{
 #if !defined(RELEASE)
 				printf("Playing to fast. Skipping note-msg %u from MIDI input.\n", msg); // don't want to print in realtime thread
@@ -1229,11 +1254,11 @@ void MIDI_HandleInputMessage(void)
 	int num_messages = 0;
 	const int max_num_messages = 128;
 	
-	std::vector<uint32_t> messages;
+	std::vector<StepRecordingMidiMsg> messages;
 
 	auto pull_more_data = [&num_messages, &messages](void)
 		{
-			uint32_t msg;
+			StepRecordingMidiMsg msg;
 	
 			while(num_messages < max_num_messages && g_step_recording_midi_msg_queue->pop(msg)==true)
 			{
@@ -1246,23 +1271,34 @@ void MIDI_HandleInputMessage(void)
 	
 	while(!messages.empty())
 	{
-		std::vector<uint32_t> messages2 = std::move(messages);
+		std::vector<StepRecordingMidiMsg> messages2 = std::move(messages);
 		messages.clear();
 
-		for(uint32_t msg : messages2)
+		for(const StepRecordingMidiMsg &step_msg : messages2)
 			if(ATOMIC_GET(root->editonoff))
 			{
-				float velocity = -1.0f;
+				struct Tracker_Windows *window = root->song->tracker_windows;
+				const int notenum = MIDI_msg_byte2(step_msg.msg);
+
+				if (msg_is_note_on(step_msg.msg)){
+
+					float velocity = -1.0f;
 				
-				if (g_record_velocity)
-					velocity = (float)MIDI_msg_byte3(msg) / 127.0;
-				
-				//printf("velocity: %f, byte3: %d, shift: %d\n",velocity,MIDI_msg_byte3(msg),shiftPressed());
-				InsertNoteCurrPos(root->song->tracker_windows,MIDI_msg_byte2(msg), shiftPressed(), velocity);
+					if (g_record_velocity)
+						velocity = (float)MIDI_msg_byte3(step_msg.msg) / 127.0;
+
+					NoteInput_note_on(NOTEINPUT_MIDI, window, notenum, velocity, step_msg.polyphonic, false);
+
+				} else if (msg_is_note_off(step_msg.msg)){
+
+					NoteInput_note_off(NOTEINPUT_MIDI, window, notenum);
+
+				}
 
 				pull_more_data();
 				
-				root->song->tracker_windows->must_redraw = true;
+				if (window != NULL)
+					window->must_redraw = true;
 			}
 	}
 }

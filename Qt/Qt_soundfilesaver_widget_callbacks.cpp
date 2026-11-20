@@ -286,6 +286,33 @@ public slots:
       return;
     }
 
+    if (format_flac->isChecked() && num_channels->value() > 8) {
+      GFX_Message2(NULL,
+                   true,
+                   "FLAC only supports up to 8 channels. Please select WAV or AIFF, or reduce the number of channels.");
+      return;
+    }
+
+    if (!save_multi) {
+      struct Patch *system_out_patch = GFX_OS_get_system_out();
+      SoundPlugin *system_out_plugin = system_out_patch==NULL ? NULL : (SoundPlugin*)system_out_patch->patchdata;
+      if (system_out_plugin != NULL && num_channels->value() > system_out_plugin->type->num_inputs) {
+        vector_t options = {};
+        int yes = VECTOR_push_back(&options, "Yes");
+        VECTOR_push_back(&options, "No");
+        if (GFX_Message2(&options,
+                         true,
+                         "\"%s\" only has %d input channel%s, so channels %d-%d will be silent. Continue?",
+                         system_out_plugin->type->name,
+                         system_out_plugin->type->num_inputs,
+                         system_out_plugin->type->num_inputs==1 ? "" : "s",
+                         system_out_plugin->type->num_inputs + 1,
+                         num_channels->value())
+            != yes)
+          return;
+      }
+    }
+
     if(filename_edit->text()==QString("")){
       GFX_Message2(NULL,
                    true,

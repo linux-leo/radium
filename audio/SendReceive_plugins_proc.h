@@ -7,9 +7,11 @@ struct SoundPluginType;
 
 extern SoundPluginType *g_receive_type2;
 extern SoundPluginType *g_receive_type8;
+extern SoundPluginType *g_receive_type16;
+extern SoundPluginType *g_receive_type32;
 
 static inline bool is_receiver_plugin(struct SoundPlugin *plugin){
-  return plugin->type==g_receive_type2 || plugin->type==g_receive_type8;
+  return plugin->type==g_receive_type2 || plugin->type==g_receive_type8 || plugin->type==g_receive_type16 || plugin->type==g_receive_type32;
 }
 
 extern LANGSPEC const wchar_t *SEND_RECEIVE_get_name(SoundPlugin *plugin);
