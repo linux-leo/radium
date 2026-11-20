@@ -7416,13 +7416,16 @@ const_char* gui_getFont(int64_t guinum){
   if (gui==NULL)
     return "";
 
-  if(QTextEdit *text_edit = dynamic_cast<QTextEdit*>(gui->_widget.data()))
+  QTextEdit *text_edit = dynamic_cast<QTextEdit*>(gui->_widget.data());
+  if (text_edit != NULL)
     return talloc_strdup(text_edit->document()->defaultFont().toString().toUtf8().constData());
 
-  if(QLineEdit *line_edit = dynamic_cast<QLineEdit*>(gui->_widget.data()))
+  QLineEdit *line_edit = dynamic_cast<QLineEdit*>(gui->_widget.data());
+  if (line_edit != NULL)
     return talloc_strdup(line_edit->font().toString().toUtf8().constData());
 
-  if(QLabel *label = dynamic_cast<QLabel*>(gui->_widget.data()))
+  QLabel *label = dynamic_cast<QLabel*>(gui->_widget.data());
+  if (label != NULL)
     return talloc_strdup(label->font().toString().toUtf8().constData());
 
   QPainter *painter = gui->get_painter();
@@ -7458,7 +7461,8 @@ void gui_setFont(int64_t guinum, const_char* char_fontdescr){
   // QTextEdit/QTextBrowser does not use a painter font. Handle these widgets
   // before calling get_painter(), since creating a painter for them makes Qt
   // try to use their paintEngine and print paintEngine warnings.
-  if(QTextEdit *text_edit = dynamic_cast<QTextEdit*>(gui->_widget.data())){
+  QTextEdit *text_edit = dynamic_cast<QTextEdit*>(gui->_widget.data());
+  if (text_edit != NULL){
     text_edit->setFont(font);
     text_edit->document()->setDefaultFont(font);
 
@@ -7473,12 +7477,14 @@ void gui_setFont(int64_t guinum, const_char* char_fontdescr){
 
   // QLineEdit and QLabel are real Qt widgets and must get the font on the
   // widget itself. Creating a painter for them can leave them blank.
-  if(QLineEdit *line_edit = dynamic_cast<QLineEdit*>(gui->_widget.data())){
+  QLineEdit *line_edit = dynamic_cast<QLineEdit*>(gui->_widget.data());
+  if (line_edit != NULL){
     line_edit->setFont(font);
     return;
   }
 
-  if(QLabel *label = dynamic_cast<QLabel*>(gui->_widget.data())){
+  QLabel *label = dynamic_cast<QLabel*>(gui->_widget.data());
+  if (label != NULL){
     label->setFont(font);
     return;
   }
