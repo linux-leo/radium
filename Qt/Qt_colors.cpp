@@ -1075,48 +1075,32 @@ void GFX_reload_qt_stylesheets(bool only_for_testing)
 {
 	int darker = 150; // Push buttons are painted in a gradient color, which makes them a little bit lighter than the background-color overall. We compensate for this by darkening the background color a little bit.
 
-	bool high_background_has_changed;
-	bool low_background_has_changed;
-  
-	{
-		// qApp->setStyleSheet is really slow.
-		// Check if we really need to call it.
-	  
-		static QString cached_buttons_text;
-		static QString cached_buttons;
-		static QString cached_buttons_pressed;
-		static QString cached_high_background;
-		static QString cached_low_background;
-		static QString cached_label;
-	  
-		QString buttons_text = get_qcolor(BUTTONS_TEXT_COLOR_NUM).name(QColor::HexArgb);
-		QString buttons = get_qcolor(BUTTONS_COLOR_NUM).name(QColor::HexArgb);
-		QString buttons_pressed = get_qcolor(BUTTONS_PRESSED_COLOR_NUM).name(QColor::HexArgb);
-		QString high_background = get_qcolor(HIGH_BACKGROUND_COLOR_NUM).name(QColor::HexArgb);
-		QString low_background = get_qcolor(LOW_BACKGROUND_COLOR_NUM).name(QColor::HexArgb);
-		QString label = get_qcolor(LABEL_COLOR_NUM).name(QColor::HexArgb);
+	// qApp->setStyleSheet is really slow.
+	// Check if we really need to call it.
 
-		high_background_has_changed = cached_high_background != high_background;
-		low_background_has_changed = cached_low_background != low_background;
-		  
-		if (only_for_testing==true
-			&& cached_buttons_text == buttons_text
-			&& cached_buttons == buttons
-			&& cached_buttons_pressed == buttons_pressed
-			&& cached_high_background == high_background
-			&& cached_low_background == low_background
-			&& cached_label == label)
-		{
-			return;
-		}
-	  
-		cached_buttons_text = buttons_text;
-		cached_buttons = buttons;
-		cached_buttons_pressed = buttons_pressed;
-		cached_high_background = high_background;
-		cached_low_background = low_background;
-		cached_label = label;
-	}
+	static QString cached_buttons_text;
+	static QString cached_buttons;
+	static QString cached_buttons_pressed;
+	static QString cached_high_background;
+	static QString cached_low_background;
+	static QString cached_label;
+  
+	QString buttons_text = get_qcolor(BUTTONS_TEXT_COLOR_NUM).name(QColor::HexArgb);
+	QString buttons = get_qcolor(BUTTONS_COLOR_NUM).name(QColor::HexArgb);
+	QString buttons_pressed = get_qcolor(BUTTONS_PRESSED_COLOR_NUM).name(QColor::HexArgb);
+	QString high_background = get_qcolor(HIGH_BACKGROUND_COLOR_NUM).name(QColor::HexArgb);
+	QString low_background = get_qcolor(LOW_BACKGROUND_COLOR_NUM).name(QColor::HexArgb);
+	QString label = get_qcolor(LABEL_COLOR_NUM).name(QColor::HexArgb);
+
+	const bool high_background_has_changed = cached_high_background != high_background;
+	const bool low_background_has_changed = cached_low_background != low_background;
+	const bool stylesheets_have_changed =
+		cached_buttons_text != buttons_text
+		|| cached_buttons != buttons
+		|| cached_buttons_pressed != buttons_pressed
+		|| high_background_has_changed
+		|| low_background_has_changed
+		|| cached_label != label;
 
 	QString pushbutton_sheet = "QPushButton{"
 		"  color: " + get_qcolor(BUTTONS_TEXT_COLOR_NUM).name(QColor::HexArgb) + ";" +
@@ -1142,23 +1126,56 @@ void GFX_reload_qt_stylesheets(bool only_for_testing)
 		"QLabel#arrow6:disabled, QLabel#arrow8:disabled, QLabel#arrow9:disabled, QLabel#arrow10:disabled {"
 		" color: #ff6a6864; border-color: #ff6a6864; }";
 
-	static bool s_has_called_qApp = false;
+	static bool s_has_applied_initial_stylesheet = false;
 	static bool s_has_called_with_testing = false;
+	bool show_progress = true;
 
 	if (only_for_testing == false)
 	{
-		if (s_has_called_with_testing)
+		if (s_has_applied_initial_stylesheet == false)
 		{
+			s_has_applied_initial_stylesheet = true;
 			s_has_called_with_testing = false;
+			show_progress = false;
+		}
+		else
+		{
+			// Only apply the application stylesheet if the realtime preview
+			// has left widget-level stylesheets behind, or if a color used by
+			// the stylesheets has actually changed.
+			if (s_has_called_with_testing == false && stylesheets_have_changed == false)
+				return;
 
+			s_has_called_with_testing = false;
+		}
+	}
+	else
+	{
+		if (stylesheets_have_changed == false)
+			return;
+
+		s_has_called_with_testing = true;
+	}
+
+	cached_buttons_text = buttons_text;
+	cached_buttons = buttons;
+	cached_buttons_pressed = buttons_pressed;
+	cached_high_background = high_background;
+	cached_low_background = low_background;
+	cached_label = label;
+
+	if (only_for_testing == false)
+	{
 		QString full_sheet = pushbutton_sheet + splitter_sheet + tabwidget_sheet + label_sheet + instrument_arrow_sheet
 			+ DISK_file_to_qstring(OS_get_full_program_file_path("stylesheet.css"));
 
-		GFX_OpenProgress("Applying stylesheet colors...");
+		if (show_progress)
+			GFX_OpenProgress("Applying stylesheet colors...");
 		//QThread::msleep(2000);
 		qApp->setStyleSheet(full_sheet);
 		//QThread::msleep(5000);
-		GFX_CloseProgress();
+		if (show_progress)
+			GFX_CloseProgress();
 
 		// Setting the app stylesheet replaces the application palette with
 		// one where the Disabled group is identical to the Active group, so
@@ -1169,24 +1186,6 @@ void GFX_reload_qt_stylesheets(bool only_for_testing)
 
 		return;
 	}
-
-	if (s_has_called_qApp == false)
-	{
-		s_has_called_qApp = true;
-
-		QString full_sheet = pushbutton_sheet + splitter_sheet + tabwidget_sheet + label_sheet + instrument_arrow_sheet
-			+ DISK_file_to_qstring(OS_get_full_program_file_path("stylesheet.css"));
-	
-		qApp->setStyleSheet(full_sheet);
-
-		if (application != NULL)
-			updateApplication(NULL, application);
-
-		return;
-	}
-	}
-
-	s_has_called_with_testing = true;
 
 	foreach(QWidget *widget, QApplication::allWidgets())
 	{
@@ -1829,6 +1828,58 @@ static void refresh_unmodified_default_configuration(void)
   }
 }
 
+// The default menu colors have changed. Update the "Default" configuration too
+// if the user hasn't changed these colors, even if other colors have been
+// modified.
+static bool migrate_menu_color(ColorConfigSnapshot &snapshot, enum ColorNums colornum, const char *old_default_color)
+{
+	if (g_program_default_configuration.colors.size() <= (int)colornum)
+		return false;
+
+	if (g_program_default_configuration.colors[colornum].isValid()==false)
+		return false;
+
+	if (snapshot.colors.size() <= (int)colornum)
+		return false;
+
+	const QColor old_color(old_default_color);
+
+	if (snapshot.colors[colornum].rgba() != old_color.rgba())
+		return false;
+
+	snapshot.colors[colornum] = g_program_default_configuration.colors[colornum];
+
+	return true;
+}
+
+static void migrate_menu_colors(void)
+{
+	if (g_color_configurations.contains("Default")==false)
+		return;
+
+	// Only do this once. installed_default_color_signature is updated to the
+	// new shipped signature later in GFX_InitColorsAndMigrate(), so a user who
+	// deliberately selects an old color afterwards won't have it overwritten
+	// again at the next startup.
+	if (get_installed_default_color_signature() == g_program_default_configuration.getSignature())
+		return;
+
+	ColorConfigSnapshot &snapshot = g_color_configurations["Default"];
+
+	bool changed = migrate_menu_color(snapshot, MENU_BACKGROUND_COLOR_NUM, "#ff0d2542");
+	changed |= migrate_menu_color(snapshot, MENU_ENTRY_BACKGROUND_COLOR_NUM, "#ff102f53");
+
+	if (changed==false)
+		return;
+
+	snapshot.is_dirty = true;
+
+	// Save immediately. GFX_SaveAllColorConfigurations() is normally only called
+	// later, for example when the preferences dialog is closed.
+	if (snapshot.saveState(get_configuration_filename("Default")))
+		snapshot.is_dirty = false;
+}
+
 // The color configurations have changed. Save the colors the user had before the
 // change as the configuration "Previous", rotate the current Default to "Old",
 // install the program's new Default configuration, and make it current.
@@ -1962,6 +2013,7 @@ bool GFX_InitColorsAndMigrate(void)
   }
 
   refresh_unmodified_default_configuration();
+  migrate_menu_colors();
   write_installed_default_color_signature();
 
   g_active_configuration_loaded = true;

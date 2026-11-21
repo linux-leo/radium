@@ -35,6 +35,10 @@
 #   RADIUM_TEST_NO_CRASH_DIALOG=1   Write crash reports (including the
 #                                   backtrace) to the log instead of starting
 #                                   the crash reporter GUI
+#   RADIUM_TEST_NO_STARTUP_MESSAGES=1
+#                                   Write startup messages such as graphics
+#                                   backend fallback notices to the log instead
+#                                   of opening a modal dialog
 #
 set -euo pipefail
 
@@ -108,9 +112,11 @@ if [ "$fallback" = 1 ] && [ -z "${DISPLAY:-}" ]; then
   exit 1
 fi
 
-testhome="$(mktemp -d "${TMPDIR:-/tmp}/radium-xvfb-home.XXXXXX")"
+reuse_testhome="/tmp/radium-xvfb-home.6axtf9"
+testhome="${reuse_testhome:-$(mktemp -d "${TMPDIR:-/tmp}/radium-xvfb-home.XXXXXX")}"
 mkdir -p "$testhome/.radium"
 
+if [ -z "$reuse_testhome" ]; then
 if [ -f "$repo/bin/config" ]; then
   cp "$repo/bin/config" "$testhome/.radium/config"
 else
@@ -132,6 +138,7 @@ if [ "$fallback" = 0 ]; then
   # Software rendering (llvmpipe) makes multisampling very expensive, and the
   # tests do not need it.
   echo "multisample_qrhi = 1" >>"$testhome/.radium/config"
+fi
 fi
 
 if [ -n "${RADIUM_CONTROL_PORT_FILE:-}" ]; then
@@ -180,6 +187,10 @@ export UBSAN_OPTIONS="print_stacktrace=1:abort_on_error=1${UBSAN_OPTIONS:+:$UBSA
 # There is no visible display, so the crash reporter GUI would silently wait
 # for a user who is not there. Log the report (including the backtrace) instead.
 export RADIUM_TEST_NO_CRASH_DIALOG=1
+
+# Backend fallback and Null-backend notices are informational. In a test run
+# they would otherwise open a modal dialog and block startup forever.
+export RADIUM_TEST_NO_STARTUP_MESSAGES=1
 
 if [ "$fallback" = 0 ]; then
   export LIBGL_ALWAYS_SOFTWARE=1
