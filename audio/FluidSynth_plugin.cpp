@@ -27,7 +27,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. */
 #define FLUIDSYNTH_DLL_EXPORTS 1
 #endif
 
-#include "../bin/packages/fluidsynth-2.5.6/include/fluidsynth.h"
+#include "../bin/packages/fluidsynth-2.6.2/include/fluidsynth.h"
 
 #include "../common/nsmtracker.h"
 #include "../common/visual_proc.h"

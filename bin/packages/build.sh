@@ -681,9 +681,9 @@ build_gc() {
 
 build_fluidsynth() {
 
-    rm -fr fluidsynth-2.5.6
-    tar xvzf fluidsynth-2.5.6.tar.gz
-    cd fluidsynth-2.5.6
+    rm -fr fluidsynth-2.6.2
+    tar xvzf fluidsynth-2.6.2.tar.gz
+    cd fluidsynth-2.6.2
     cmake . \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_SHARED_LIBS=OFF \
@@ -792,7 +792,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]] ; then
 	#build_faust
 	#build_qhttpserver
 	#build_gc
-	#build_fluidsynth
+	build_fluidsynth
 	#build_python27
 	#build_qscintilla # Note: Linking fails on Mac. Just ignore it.
 
@@ -804,8 +804,8 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]] ; then
 		echo "Finished compiling libpds and xcb" # need this line to avoid script failing if all the lines above are commented out.
 	fi
 
-	build_libpd
-	build_pd_externals
+	#build_libpd
+	#build_pd_externals
 	echo "Finished building libpd and pd externals" # need this line to avoid script failing if the line above is commented out.
 	
 	if uname -s |grep Linux ; then

@@ -1175,7 +1175,7 @@ start_bin.sh:
 	time $(LINKER) -Xlinker --preload `cat buildtype.opt` $(OBJ) $(OS_OBJS) -o $(RADIUM_BIN) -g $(OS_LDFLAGS) $(JACK_LDFLAGS) $(QTLINKFLAGS) $(OS_LDFLAGS2)
 	touch /tmp/run_preload
 
-$(RADIUM_BIN): $(OBJ) $(MAKEFILE) bin/packages/fluidsynth-2.5.6/src/libfluidsynth.a $(OS_DEPS)
+$(RADIUM_BIN): $(OBJ) $(MAKEFILE) bin/packages/fluidsynth-2.6.2/src/libfluidsynth.a $(OS_DEPS)
 	@echo
 	@echo "Changed ($(RADIUM_BIN)):"
 	@echo $?
@@ -2464,10 +2464,10 @@ $(T)FluidSynth_plugin.o: audio/FluidSynth_plugin.cpp
 
 # precompile disabled because of strange error message
 $(T)Pd_plugin.o: audio/Pd_plugin.cpp #$(QT_PCH)
-	$(CCC2) -Ibin/packages/fluidsynth-2.5.6/include $(QTOPT) `$(PKG) --cflags glib-2.0` audio/Pd_plugin.cpp -Ibin/packages/libpd-master/libpds -Ibin/packages/libpd-master/libpd_wrapper -Ibin/packages/libpd-master/pure-data/src #$(QT_PCH_INCLUDE)
+	$(CCC2) -Ibin/packages/fluidsynth-2.6.2/include $(QTOPT) `$(PKG) --cflags glib-2.0` audio/Pd_plugin.cpp -Ibin/packages/libpd-master/libpds -Ibin/packages/libpd-master/libpd_wrapper -Ibin/packages/libpd-master/pure-data/src #$(QT_PCH_INCLUDE)
 
 $(T)Pd_plugin2.o: audio/Pd_plugin2.cpp #$(QT_PCH)
-	$(CCC2) -Ibin/packages/fluidsynth-1.1.6/include $(QTOPT) `$(PKG) --cflags glib-2.0` audio/Pd_plugin2.cpp -isystem $(PD2_LIBPD_DIR)/libpd_wrapper -isystem $(PD2_LIBPD_DIR)/pure-data/src #$(QT_PCH_INCLUDE)
+	$(CCC2) -Ibin/packages/fluidsynth-2.6.2/include $(QTOPT) `$(PKG) --cflags glib-2.0` audio/Pd_plugin2.cpp -isystem $(PD2_LIBPD_DIR)/libpd_wrapper -isystem $(PD2_LIBPD_DIR)/pure-data/src #$(QT_PCH_INCLUDE)
 
 $(T)libpds.o: $(BUILD_DEPENDENCIES) libpds/libpds.c libpds/libpds.h
 	$(CC2) libpds/libpds.c $(OPT) -isystem $(PD2_LIBPD_DIR)/libpd_wrapper -isystem $(PD2_LIBPD_DIR)/pure-data/src
